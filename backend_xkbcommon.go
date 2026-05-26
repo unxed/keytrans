@@ -12,10 +12,12 @@ import (
 )
 
 type xkbcommonTranslator struct {
-	lib     uintptr
-	context uintptr
-	keymap  uintptr
-	state   uintptr
+	lib       uintptr
+	context   uintptr
+	keymap    uintptr
+	state     uintptr
+	conn      *xgb.Conn
+	xkbOpcode byte
 
 	// Symbols
 	fnContextNew          uintptr
@@ -44,6 +46,22 @@ func newXkbcommonTranslator(info OSInfo) Translator {
 	if err := t.resolveSymbols(); err != nil {
 		purego.Dlclose(lib)
 		return nil
+	}
+
+	// Request XKEYBOARD extension to get the state dynamically
+	extCookie := xproto.QueryExtension(conn, uint16(len("XKEYBOARD")), "XKEYBOARD")
+	extReply, err := extCookie.Reply()
+	if err == nil && extReply.Present {
+		t.xkbOpcode = extReply.MajorOpcode
+		// Init extension on server
+		buf := make([]byte, 8)
+		buf[0] = t.xkbOpcode
+		xgb.Put16(buf[2:], 2) // length
+		xgb.Put16(buf[4:], 1) // major
+		cookie := conn.NewCookie(true, true)
+		conn.NewRequest(buf, cookie)
+		_, _ = cookie.Reply()
+		t.conn = conn
 	}
 
 	// 1. Create context
@@ -110,6 +128,31 @@ func (t *xkbcommonTranslator) Name() string {
 }
 
 func (t *xkbcommonTranslator) TranslateX11(detail uint8, state uint16, isDown bool) winkeys.InputEvent {
+	// Sync state with X server (only if connection is available)
+	if t.conn != nil {
+		buf := make([]byte, 8)
+		buf[0] = t.xkbOpcode
+		buf[1] = 4            // XkbGetState
+		xgb.Put16(buf[2:], 2) // Length
+		xgb.Put16(buf[4:], 0x0100) // XkbUseCoreKbd
+
+		cookie := t.conn.NewCookie(true, true)
+		t.conn.NewRequest(buf, cookie)
+		if reply, err := cookie.Reply(); err == nil && len(reply) >= 18 {
+			depressed := uint32(reply[9])
+			latched := uint32(reply[10])
+			locked := uint32(reply[11])
+			lockedGroup := uint32(reply[13])
+			baseGroup := uint32(xgb.Get16(reply[14:]))
+			latchedGroup := uint32(xgb.Get16(reply[16:]))
+
+			purego.SyscallN(t.fnStateUpdateMask, t.state,
+				uintptr(depressed), uintptr(latched), uintptr(locked),
+				uintptr(baseGroup), uintptr(latchedGroup), uintptr(lockedGroup),
+			)
+		}
+	}
+
 	xkbKey := uint32(detail)
 
 	// Fetch keysym and character
