@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+    "os"
+    "runtime"
 
 	"github.com/jezek/xgb"
 	"github.com/jezek/xgb/xproto"
@@ -53,6 +55,29 @@ func newXkbcompTranslator(info OSInfo) Translator {
 	// Try to dump map via xkbcomp
 	path, err := exec.LookPath("xkbcomp")
 	if err != nil {
+		if runtime.GOOS == "windows" {
+			commonPaths := []string{
+				`C:\Program Files\VcXsrv\xkbcomp.exe`,
+				`C:\Program Files (x86)\VcXsrv\xkbcomp.exe`,
+				`C:\Program Files\Xming\xkbcomp.exe`,
+				`C:\Program Files (x86)\Xming\xkbcomp.exe`,
+				`C:\cygwin64\bin\xkbcomp.exe`,
+				`C:\cygwin\bin\xkbcomp.exe`,
+				`C:\msys64\usr\bin\xkbcomp.exe`,
+				`C:\msys64\mingw64\bin\xkbcomp.exe`,
+				`C:\msys64\mingw32\bin\xkbcomp.exe`,
+			}
+			for _, p := range commonPaths {
+				if _, serr := os.Stat(p); serr == nil {
+					path = p
+					err = nil
+					break
+				}
+			}
+		}
+	}
+
+	if err != nil || path == "" {
 		return nil
 	}
 
