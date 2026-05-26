@@ -37,7 +37,15 @@ func newXkbcommonTranslator(info OSInfo) Translator {
 		return nil
 	}
 
-	lib, err := purego.Dlopen("libxkbcommon.so.0", purego.RTLD_NOW|purego.RTLD_GLOBAL)
+	libNames := []string{"libxkbcommon.so.0", "libxkbcommon.0.dylib"}
+	var lib uintptr
+	var err error
+	for _, name := range libNames {
+		lib, err = purego.Dlopen(name, purego.RTLD_NOW|purego.RTLD_GLOBAL)
+		if err == nil {
+			break
+		}
+	}
 	if err != nil {
 		return nil
 	}
