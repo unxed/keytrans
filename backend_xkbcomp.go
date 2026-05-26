@@ -152,6 +152,9 @@ func (t *xkbcompTranslator) UpdateWaylandModifiers(modsDepressed, modsLatched, m
 func (t *xkbcompTranslator) Close() {}
 
 func isXkbcompOutputValid(output []byte) bool {
+	if len(output) == 0 {
+		return false
+	}
 	str := string(output)
 	if !strings.Contains(str, "xkb_symbols") || !strings.Contains(str, "xkb_keycodes") {
 		return false

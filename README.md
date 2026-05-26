@@ -123,6 +123,19 @@ case xproto.KeyPressEvent:
 }
 ```
 
+### 3. Handling Keyboard Layout Changes (MappingNotify)
+
+When a user changes their keyboard layout settings (e.g., via `setxkbmap` or by plugging in a new keyboard), X11 sends a `MappingNotify` event. Since `keytrans` does not run its own event loop, the recommended approach is to handle this event in your application's loop and recreate the translator to reload the mapping:
+
+```go
+switch e := ev.(type) {
+case xproto.MappingNotifyEvent:
+    // Recreate the translator to reload the updated mapping
+    translator.Close()
+    translator = keytrans.NewX11Translator(info)
+}
+```
+
 ## Build Tags
 
 If you want to completely disable FFI and ensure that your binary doesn't even attempt to dynamically load C libraries at runtime (e.g. for static scratch builds), build your project with the `noffi` tag:
