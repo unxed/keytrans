@@ -127,8 +127,9 @@ func (t *coreX11Translator) TranslateX11(detail uint8, state uint16, isDown bool
 	vk := keysymToVK(sym)
 
 	// Positional VK fallback for alternate layouts
-	if vk == 0 && group > 0 {
-		baseSym := t.lookup(kc, state, 0)
+	isAlternateLayout := group > 0 || (state&t.modeSwitchMask) != 0
+	if vk == 0 && isAlternateLayout {
+		baseSym := t.lookup(kc, state&^t.modeSwitchMask, 0)
 		vk = keysymToVK(baseSym)
 	}
 
