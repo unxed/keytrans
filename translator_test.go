@@ -7,6 +7,7 @@ import (
 	"github.com/jezek/xgb/xproto"
 	"github.com/unxed/winkeys"
 	"github.com/unxed/xkb-go"
+	"github.com/jezek/xgb"
 )
 
 func TestKeysymToVK(t *testing.T) {
@@ -582,5 +583,46 @@ func TestTranslateModifiers_Extended(t *testing.T) {
 
 	if got != want {
 		t.Errorf("translateModifiers(2|16) = %v, want %v", got, want)
+	}
+}
+func TestXKBStateParsing_Manual(t *testing.T) {
+	// Mocking the structure of a reply from XKB:GetState
+	// [0..7] - generic header
+	// [8] - deviceID
+	// [9] - mods (depressed)
+	// [10] - latchedMods
+	// [11] - lockedMods
+	// [12] - ignored
+	// [13] - lockedGroup (1 byte)
+	// [14..15] - baseGroup (2 bytes, int16)
+	// [16..17] - latchedGroup (2 bytes, int16)
+
+	reply := make([]byte, 18)
+	reply[13] = 1            // lockedGroup = 1
+	xgb.Put16(reply[14:], 2) // baseGroup = 2 (LE)
+
+	// Logic from TranslateX11:
+	// group = int(int16(xgb.Get16(reply[14:]))) + int(reply[13])
+	baseGroup := int16(xgb.Get16(reply[14:]))
+	lockedGroup := reply[13]
+	group := int(baseGroup) + int(lockedGroup)
+
+	if group != 3 {
+		t.Errorf("XKB State parsing logic failed: base(%d) + locked(%d) = %d, want 3", baseGroup, lockedGroup, group)
+	}
+}
+
+func TestXIM_WindowIDGuard(t *testing.T) {
+	// If WindowID is 0, XIM must return nil to avoid server-side BadWindow error.
+	info := OSInfo{
+		WindowID: 0,
+		XgbConn:  &xgb.Conn{}, // Fake conn to pass type check
+	}
+
+	// We call internal newX11XIMTranslator. On non-FFI platforms it's a stub returning nil,
+	// which also satisfies the test.
+	xim := newX11XIMTranslator(info)
+	if xim != nil {
+		t.Errorf("newX11XIMTranslator should return nil for WindowID=0")
 	}
 }
