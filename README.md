@@ -38,7 +38,7 @@ If the system has no dynamic loading capabilities or if compiled with `-tags nof
 ## Installation
 
 ```bash
-go get github.com/unxed/vtinput/keytrans
+go get github.com/unxed/keytrans
 ```
 
 ## Quick Start

@@ -2,8 +2,10 @@ package keytrans
 
 import (
 	"unicode"
+
 	"github.com/jezek/xgb"
 	"github.com/jezek/xgb/xproto"
+	"github.com/unxed/winkeys"
 	"github.com/unxed/xkb-go"
 )
 
@@ -78,7 +80,7 @@ func (t *coreX11Translator) Name() string {
 	return "corex11"
 }
 
-func (t *coreX11Translator) TranslateX11(detail uint8, state uint16, isDown bool) KeyEvent {
+func (t *coreX11Translator) TranslateX11(detail uint8, state uint16, isDown bool) winkeys.InputEvent {
 	kc := int(detail)
 
 	sym := t.lookup(kc, state, 0)
@@ -92,15 +94,19 @@ func (t *coreX11Translator) TranslateX11(detail uint8, state uint16, isDown bool
 		vk = keysymToVK(baseSym)
 	}
 
-	return KeyEvent{
+	return winkeys.InputEvent{
+		Type:            winkeys.KeyEventType,
 		VirtualKeyCode:  vk,
 		Char:            char,
+		KeyDown:         isDown,
 		ControlKeyState: translateModifiers(state),
+		InputSource:     "corex11",
+		RepeatCount:     1,
 	}
 }
 
-func (t *coreX11Translator) TranslateWayland(keycode uint32, isDown bool) KeyEvent {
-	return KeyEvent{} // Not supported by this backend
+func (t *coreX11Translator) TranslateWayland(keycode uint32, isDown bool) winkeys.InputEvent {
+	return winkeys.InputEvent{} // Not supported by this backend
 }
 
 func (t *coreX11Translator) UpdateWaylandModifiers(modsDepressed, modsLatched, modsLocked, group uint32) {}

@@ -8,6 +8,7 @@ import (
 	"github.com/ebitengine/purego"
 	"github.com/jezek/xgb"
 	"github.com/jezek/xgb/xproto"
+	"github.com/unxed/winkeys"
 )
 
 type xkbcommonTranslator struct {
@@ -108,7 +109,7 @@ func (t *xkbcommonTranslator) Name() string {
 	return "libxkbcommon"
 }
 
-func (t *xkbcommonTranslator) TranslateX11(detail uint8, state uint16, isDown bool) KeyEvent {
+func (t *xkbcommonTranslator) TranslateX11(detail uint8, state uint16, isDown bool) winkeys.InputEvent {
 	xkbKey := uint32(detail)
 
 	// Fetch keysym and character
@@ -130,14 +131,18 @@ func (t *xkbcommonTranslator) TranslateX11(detail uint8, state uint16, isDown bo
 	}
 
 	vk := keysymToVK(sym)
-	return KeyEvent{
+	return winkeys.InputEvent{
+		Type:            winkeys.KeyEventType,
 		VirtualKeyCode:  vk,
 		Char:            char,
+		KeyDown:         isDown,
 		ControlKeyState: translateModifiers(state),
+		InputSource:     "libxkbcommon",
+		RepeatCount:     1,
 	}
 }
 
-func (t *xkbcommonTranslator) TranslateWayland(keycode uint32, isDown bool) KeyEvent {
+func (t *xkbcommonTranslator) TranslateWayland(keycode uint32, isDown bool) winkeys.InputEvent {
 	// Offset applied for wayland (evdev -> xkb)
 	return t.TranslateX11(uint8(keycode+8), 0, isDown)
 }

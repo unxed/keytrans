@@ -6,6 +6,7 @@ import (
 	"unsafe"
 
 	"github.com/ebitengine/purego"
+	"github.com/unxed/winkeys"
 )
 
 type x11ximTranslator struct {
@@ -44,6 +45,12 @@ type xKeyEvent struct {
 }
 
 func newX11XIMTranslator(info OSInfo) Translator {
+	// XIM strictly requires a valid Window ID to create the input context.
+	// Falling back early prevents X-server BadWindow crashes.
+	if info.WindowID == 0 {
+		return nil
+	}
+
 	lib, err := purego.Dlopen("libX11.so.6", purego.RTLD_NOW|purego.RTLD_GLOBAL)
 	if err != nil {
 		return nil
@@ -56,7 +63,13 @@ func newX11XIMTranslator(info OSInfo) Translator {
 	}
 
 	// 1. Open Display
-	dpy, _, _ := purego.SyscallN(t.fnOpenDisplay, 0)
+	var displayArg uintptr
+	if info.DisplayString != "" {
+		displayC := append([]byte(info.DisplayString), 0)
+		displayArg = uintptr(unsafe.Pointer(&displayC[0]))
+	}
+
+	dpy, _, _ := purego.SyscallN(t.fnOpenDisplay, displayArg)
 	if dpy == 0 {
 		purego.Dlclose(lib)
 		return nil
@@ -81,8 +94,8 @@ func newX11XIMTranslator(info OSInfo) Translator {
 
 	ic, _, _ := purego.SyscallN(t.fnCreateIC, t.im,
 		uintptr(unsafe.Pointer(&nInputStyle[0])), bestStyle,
-		uintptr(unsafe.Pointer(&nClientWindow[0])), 1, // Placeholder window ID
-		uintptr(unsafe.Pointer(&nFocusWindow[0])), 1,
+		uintptr(unsafe.Pointer(&nClientWindow[0])), uintptr(info.WindowID),
+		uintptr(unsafe.Pointer(&nFocusWindow[0])), uintptr(info.WindowID),
 		0,
 	)
 	if ic == 0 {
@@ -100,7 +113,7 @@ func (t *x11ximTranslator) Name() string {
 	return "libX11-XIM"
 }
 
-func (t *x11ximTranslator) TranslateX11(detail uint8, state uint16, isDown bool) KeyEvent {
+func (t *x11ximTranslator) TranslateX11(detail uint8, state uint16, isDown bool) winkeys.InputEvent {
 	ev := xKeyEvent{
 		Type:    2, // KeyPress
 		Display: t.display,
@@ -129,15 +142,19 @@ func (t *x11ximTranslator) TranslateX11(detail uint8, state uint16, isDown bool)
 	}
 
 	vk := keysymToVK(uint32(keysym))
-	return KeyEvent{
+	return winkeys.InputEvent{
+		Type:            winkeys.KeyEventType,
 		VirtualKeyCode:  vk,
 		Char:            char,
+		KeyDown:         isDown,
 		ControlKeyState: translateModifiers(state),
+		InputSource:     "libX11-XIM",
+		RepeatCount:     1,
 	}
 }
 
-func (t *x11ximTranslator) TranslateWayland(keycode uint32, isDown bool) KeyEvent {
-	return KeyEvent{} // XIM does not support Wayland
+func (t *x11ximTranslator) TranslateWayland(keycode uint32, isDown bool) winkeys.InputEvent {
+	return winkeys.InputEvent{} // XIM does not support Wayland
 }
 
 func (t *x11ximTranslator) UpdateWaylandModifiers(modsDepressed, modsLatched, modsLocked, group uint32) {}

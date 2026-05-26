@@ -9,6 +9,7 @@ import (
 
 	"github.com/jezek/xgb"
 	"github.com/jezek/xgb/xproto"
+	"github.com/unxed/winkeys"
 	"github.com/unxed/xkb-go"
 )
 
@@ -90,7 +91,7 @@ func (t *xkbcompTranslator) Name() string {
 	return "xkbcomp"
 }
 
-func (t *xkbcompTranslator) TranslateX11(detail uint8, state uint16, isDown bool) KeyEvent {
+func (t *xkbcompTranslator) TranslateX11(detail uint8, state uint16, isDown bool) winkeys.InputEvent {
 	// Sync state with X server (only if connection is available)
 	if t.conn != nil {
 		buf := make([]byte, 8)
@@ -129,14 +130,18 @@ func (t *xkbcompTranslator) TranslateX11(detail uint8, state uint16, isDown bool
 		t.xkbState.UpdateMask(bm, lam, lom, bg, lag, log)
 	}
 
-	return KeyEvent{
+	return winkeys.InputEvent{
+		Type:            winkeys.KeyEventType,
 		VirtualKeyCode:  vk,
 		Char:            char,
+		KeyDown:         isDown,
 		ControlKeyState: translateModifiers(state),
+		InputSource:     "xkbcomp",
+		RepeatCount:     1,
 	}
 }
 
-func (t *xkbcompTranslator) TranslateWayland(keycode uint32, isDown bool) KeyEvent {
+func (t *xkbcompTranslator) TranslateWayland(keycode uint32, isDown bool) winkeys.InputEvent {
 	return t.TranslateX11(uint8(keycode+8), 0, isDown)
 }
 

@@ -1,12 +1,12 @@
 package keytrans
 
 import (
-	"testing"
 	"context"
+	"testing"
 
 	"github.com/jezek/xgb/xproto"
-	"github.com/unxed/vtinput"
-	xkb "github.com/unxed/xkb-go"
+	"github.com/unxed/winkeys"
+	"github.com/unxed/xkb-go"
 )
 
 func TestKeysymToVK(t *testing.T) {
@@ -14,13 +14,13 @@ func TestKeysymToVK(t *testing.T) {
 		keysym uint32
 		wantVK uint16
 	}{
-		{0xff51, vtinput.VK_LEFT},
-		{0xff8d, vtinput.VK_RETURN},   // KP_Enter
-		{0xffb5, vtinput.VK_NUMPAD5}, // KP_5
-		{0xffab, vtinput.VK_ADD},     // KP_Add
-		{0x0061, vtinput.VK_A},       // 'a'
-		{0x0041, vtinput.VK_A},       // 'A'
-		{0x0033, vtinput.VK_3},       // '3'
+		{0xff51, winkeys.VK_LEFT},
+		{0xff8d, winkeys.VK_RETURN},   // KP_Enter
+		{0xffb5, winkeys.VK_NUMPAD5}, // KP_5
+		{0xffab, winkeys.VK_ADD},     // KP_Add
+		{0x0061, winkeys.VK_A},       // 'a'
+		{0x0041, winkeys.VK_A},       // 'A'
+		{0x0033, winkeys.VK_3},       // '3'
 	}
 
 	for _, tt := range tests {
@@ -34,14 +34,14 @@ func TestKeysymToVK(t *testing.T) {
 func TestTranslateModifiers(t *testing.T) {
 	tests := []struct {
 		state uint16
-		want  vtinput.ControlKeyState
+		want  winkeys.ControlKeyState
 	}{
-		{1, vtinput.ShiftPressed},
-		{4, vtinput.LeftCtrlPressed},
-		{8, vtinput.LeftAltPressed},
-		{2, vtinput.CapsLockOn},
-		{16, vtinput.NumLockOn},
-		{1 | 4, vtinput.ShiftPressed | vtinput.LeftCtrlPressed},
+		{1, winkeys.ShiftPressed},
+		{4, winkeys.LeftCtrlPressed},
+		{8, winkeys.LeftAltPressed},
+		{2, winkeys.CapsLockOn},
+		{16, winkeys.NumLockOn},
+		{1 | 4, winkeys.ShiftPressed | winkeys.LeftCtrlPressed},
 	}
 
 	for _, tt := range tests {
@@ -287,7 +287,7 @@ func TestCoreX11TranslateX11_PositionalVKFallback(t *testing.T) {
 
 	// 2. The Virtual Key Code must fallback to English layout equivalent: VK_C (0x43)
 	// This prevents shortcuts like Ctrl+C from breaking when alternative layout is on.
-	if event.VirtualKeyCode != vtinput.VK_C {
+	if event.VirtualKeyCode != winkeys.VK_C {
 		t.Errorf("Expected fallback VirtualKeyCode to be VK_C (0x43), got 0x%X", event.VirtualKeyCode)
 	}
 }
@@ -351,8 +351,8 @@ func TestXkbcompTranslateWayland(t *testing.T) {
 		t.Errorf("Expected translated Wayland character to be 'q', got '%c'", event.Char)
 	}
 
-	if event.VirtualKeyCode != vtinput.VK_Q {
-		t.Errorf("Expected Wayland VirtualKeyCode to be VK_Q (0x%X), got 0x%X", vtinput.VK_Q, event.VirtualKeyCode)
+	if event.VirtualKeyCode != winkeys.VK_Q {
+		t.Errorf("Expected Wayland VirtualKeyCode to be VK_Q (0x%X), got 0x%X", winkeys.VK_Q, event.VirtualKeyCode)
 	}
 }
 
@@ -368,7 +368,7 @@ func TestCoreX11Lookup_AltGrDynamicOffset(t *testing.T) {
 	// Create a mock coreX11Translator with groupWidth=2 (standard non-XKB width)
 	syms := make([]xproto.Keysym, 256)
 	offset := (24 - 8) * 4 // Keycode 24 (QWERTY 'q')
-
+	
 	// Group 0: Level 0 = 'a' (0x61), Level 1 = 'A' (0x41)
 	syms[offset+0] = 0x61
 	syms[offset+1] = 0x41
@@ -412,8 +412,8 @@ func TestCoreX11TranslateX11_ModifierKeys(t *testing.T) {
 	event := trans.TranslateX11(50, 0, true)
 
 	// Modifier keys must return correct VirtualKeyCode
-	if event.VirtualKeyCode != vtinput.VK_LSHIFT {
-		t.Errorf("Expected VK_LSHIFT (0x%X), got 0x%X", vtinput.VK_LSHIFT, event.VirtualKeyCode)
+	if event.VirtualKeyCode != winkeys.VK_LSHIFT {
+		t.Errorf("Expected VK_LSHIFT (0x%X), got 0x%X", winkeys.VK_LSHIFT, event.VirtualKeyCode)
 	}
 
 	// Modifier keys must return 0 character (not a printable character)
@@ -468,7 +468,7 @@ func TestXkbcompTranslate_PositionalVKFallback(t *testing.T) {
 	}
 
 	// 2. The Virtual Key Code must fallback to English layout equivalent: VK_C (0x43)
-	if event.VirtualKeyCode != vtinput.VK_C {
+	if event.VirtualKeyCode != winkeys.VK_C {
 		t.Errorf("Expected fallback VirtualKeyCode to be VK_C (0x43), got 0x%X", event.VirtualKeyCode)
 	}
 }
