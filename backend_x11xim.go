@@ -1,4 +1,4 @@
-//go:build !noffi && (linux || darwin || freebsd)
+//go:build !noffi && (linux || darwin)
 
 package keytrans
 
@@ -81,7 +81,6 @@ func newX11XIMTranslator(info OSInfo) Translator {
 		"libX11.so",
 		"libX11.6.dylib",
 		"/usr/lib/x86_64-linux-gnu/libX11.so.6",
-		"/usr/local/lib/libX11.so.6",
 		"/usr/local/lib/libX11.so",
 		"/opt/X11/lib/libX11.6.dylib",
 	}
