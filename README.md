@@ -136,7 +136,16 @@ case xproto.MappingNotifyEvent:
 }
 ```
 
+## Output Format: Win32-style Events
+
+`keytrans` produces keyboard events using the unified `winkeys.InputEvent` structure, which follows the Win32 input model. This design decision was made for several practical reasons:
+
+1.  **Heritage:** The library was originally written for the `vtui` project, which relies on this format.
+2.  **Industry Standard:** The Win32 model is a well-known, simple, and unambiguous way to describe keyboard input. It provides a clean separation between the logical key (Virtual Key Code), the state of modifiers (Shift, Ctrl, Alt), and the resulting Unicode character. This makes event processing straightforward and predictable.
+3.  **Maximum Flexibility:** You are not locked into the Win32 ecosystem. If you prefer to handle key logic using raw X11 keycodes, you can do so—simply use the `Char` field from the translated event to get the localized Unicode text and ignore the Virtual Key Code entirely.
+
 ## Build Tags
+```
 
 If you want to completely disable FFI and ensure that your binary doesn't even attempt to dynamically load C libraries at runtime (e.g. for static scratch builds), build your project with the `noffi` tag:
 
