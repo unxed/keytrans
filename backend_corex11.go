@@ -19,6 +19,7 @@ type coreX11Translator struct {
 	numLockMask    uint16
 	modeSwitchMask uint16
 	altGrMask      uint16
+	xkbOpcode      byte
 }
 
 func newCoreX11Translator(info OSInfo) Translator {
@@ -37,12 +38,28 @@ func newCoreX11Translator(info OSInfo) Translator {
 		return nil
 	}
 
+	// Request XKEYBOARD extension to get the state dynamically (matching purex11_host.go)
+	var xkbOpcode byte
+	extCookie := xproto.QueryExtension(conn, uint16(len("XKEYBOARD")), "XKEYBOARD")
+	if extReply, err := extCookie.Reply(); err == nil && extReply.Present {
+		xkbOpcode = extReply.MajorOpcode
+		// Init extension on server
+		buf := make([]byte, 8)
+		buf[0] = xkbOpcode
+		xgb.Put16(buf[2:], 2) // length
+		xgb.Put16(buf[4:], 1) // major
+		cookie := conn.NewCookie(true, true)
+		conn.NewRequest(buf, cookie)
+		_, _ = cookie.Reply()
+	}
+
 	t := &coreX11Translator{
 		conn:       conn,
 		minKeycode: int(min),
 		maxKeycode: int(max),
 		symsPerKey: int(reply.KeysymsPerKeycode),
 		syms:       reply.Keysyms,
+		xkbOpcode:  xkbOpcode,
 	}
 
 	// ModMap Discovery
@@ -83,14 +100,35 @@ func (t *coreX11Translator) Name() string {
 func (t *coreX11Translator) TranslateX11(detail uint8, state uint16, isDown bool) winkeys.InputEvent {
 	kc := int(detail)
 
-	sym := t.lookup(kc, state, 0)
+	// Query active XKB group index dynamically from X server (matching purex11_host.go)
+	group := 0
+	if t.conn != nil && t.xkbOpcode != 0 {
+		buf := make([]byte, 8)
+		buf[0] = t.xkbOpcode
+		buf[1] = 4            // XkbGetState
+		xgb.Put16(buf[2:], 2) // Length
+		xgb.Put16(buf[4:], 0x0100) // XkbUseCoreKbd
+
+		cookie := t.conn.NewCookie(true, true)
+		t.conn.NewRequest(buf, cookie)
+		if reply, err := cookie.Reply(); err == nil && len(reply) >= 18 {
+			group = int(int16(xgb.Get16(reply[14:]))) + int(reply[13]) // baseGroup + lockedGroup
+			if group < 0 {
+				group = 0
+			}
+			if group > 3 {
+				group = group % 4
+			}
+		}
+	}
+
+	sym := t.lookup(kc, state, group)
 	char := xkb.KeysymToUTF32(xkb.Keysym(sym))
 	vk := keysymToVK(sym)
 
 	// Positional VK fallback for alternate layouts
-	isAlternateLayout := (state & t.modeSwitchMask) != 0
-	if vk == 0 && isAlternateLayout {
-		baseSym := t.lookup(kc, state & ^t.modeSwitchMask, 0)
+	if vk == 0 && group > 0 {
+		baseSym := t.lookup(kc, state, 0)
 		vk = keysymToVK(baseSym)
 	}
 
@@ -144,6 +182,16 @@ func (t *coreX11Translator) lookup(kc int, state uint16, group int) uint32 {
 	groupWidth := 2
 	if t.symsPerKey > 4 && t.symsPerKey%4 == 0 {
 		groupWidth = 4
+		// Heuristic: If syms[2] or syms[3] is a letter, then this is actually
+		// a multi-group layout with groupWidth = 2 (e.g., English + Russian
+		// base layouts mapped to Group 0 and Group 1 of width 2).
+		if len(syms) > 3 {
+			r2 := xkb.KeysymToUTF32(xkb.Keysym(syms[2]))
+			r3 := xkb.KeysymToUTF32(xkb.Keysym(syms[3]))
+			if (r2 != 0 && unicode.IsLetter(r2)) || (r3 != 0 && unicode.IsLetter(r3)) {
+				groupWidth = 2
+			}
+		}
 	}
 
 	idx := effectiveGroup * groupWidth
@@ -157,7 +205,8 @@ func (t *coreX11Translator) lookup(kc int, state uint16, group int) uint32 {
 				idx += 2
 			}
 		} else {
-			for _, o := range []int{2, 3, 4} {
+			offsets := []int{4, 2, 6, 8}
+			for _, o := range offsets {
 				if idx+o < length && syms[idx+o] != 0 {
 					idx += o
 					break

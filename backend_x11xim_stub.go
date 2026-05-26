@@ -1,4 +1,4 @@
-//go:build noffi
+//go:build noffi || (!linux && !freebsd && !openbsd && !netbsd && !dragonfly && !solaris && !illumos && !darwin)
 
 package keytrans
 

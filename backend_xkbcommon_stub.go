@@ -1,4 +1,4 @@
-//go:build noffi
+//go:build noffi || (!linux && !darwin)
 
 package keytrans
 
