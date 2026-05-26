@@ -35,6 +35,37 @@ When initializing an X11 translator, `keytrans` attempts the following backends 
 
 If the system has no dynamic loading capabilities or if compiled with `-tags noffi`, `keytrans` gracefully falls back to purely Go-based parsing (`xkbcomp` or `corex11` heuristics), keeping compilation 100% clean and portable.
 
+## Manual Backend Selection
+
+While the automatic fallback chain is recommended for production, you can force the translator to use a specific backend during development, testing, or debugging.
+
+To do this, specify the `PreferredBackend` field in `OSInfo`:
+
+```go
+info := keytrans.OSInfo{
+	XgbConn:          conn,
+	WindowID:         uint32(winID),
+	PreferredBackend: "corex11", // Force Core X11 heuristics
+}
+```
+
+Supported backend strings:
+*   `"libxkbcommon"` (requires `libxkbcommon.so.0` and FFI support)
+*   `"libX11-XIM"` (requires `libX11.so.6` and FFI support)
+*   `"xkbcomp"` (requires `xkbcomp` binary available in `$PATH`)
+*   `"corex11"` (pure Go fallback, always available)
+
+### Forcing via Environment Variable
+
+Alternatively, you can force a specific backend globally using the `KEYTRANS_BACKEND` environment variable:
+
+```bash
+export KEYTRANS_BACKEND="corex11"
+./my_app
+```
+
+**Important:** Unlike the programmatic `PreferredBackend` option, if the backend requested via `KEYTRANS_BACKEND` fails to initialize (e.g. if you request `libxkbcommon` but the shared library is missing), `keytrans` will immediately log a critical error and **terminate the application** (`os.Exit(1)`).
+
 ## Installation
 
 ```bash
@@ -60,8 +91,10 @@ func main() {
 
 	// Setup OS-specific connection info
 	info := keytrans.OSInfo{
-		DisplayString: ":0",
-		XgbConn:       conn,
+		DisplayString:    ":0",
+		XgbConn:          conn,
+		WindowID:         uint32(winID), // Required for XIM (libX11) backend
+		PreferredBackend: "",            // Optional: force a specific backend (e.g. "corex11")
 	}
 
 	// Create fallback-aware translator
@@ -99,3 +132,7 @@ go build -tags noffi .
 ```
 
 This will strip out the `libxkbcommon` and `libX11` backends, compiling only the pure Go implementations.
+
+## Compatibility
+
+Important note for developers and AI models: We cannot rely on group information in X11 events, as some X servers always report 0. Additionally, we cannot rely on the Mod5 value in X11 events, because certain X servers set this flag for any group other than 0, regardless of whether AltGr is pressed. Please ensure all future development takes these factors into consideration.
