@@ -1,4 +1,4 @@
-//go:build noffi || (!linux && !darwin && !freebsd)
+//go:build noffi || (!linux && !darwin)
 
 package keytrans
 

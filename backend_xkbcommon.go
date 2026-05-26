@@ -1,4 +1,4 @@
-//go:build !noffi && (linux || darwin || freebsd)
+//go:build !noffi && (linux || darwin)
 
 package keytrans
 
@@ -37,13 +37,7 @@ func newXkbcommonTranslator(info OSInfo) Translator {
 		return nil
 	}
 
-	libNames := []string{
-		"libxkbcommon.so.0",
-		"libxkbcommon.so",
-		"libxkbcommon.0.dylib",
-		"/usr/local/lib/libxkbcommon.so.0",
-		"/usr/local/lib/libxkbcommon.so",
-	}
+	libNames := []string{"libxkbcommon.so.0", "libxkbcommon.0.dylib"}
 	var lib uintptr
 	var err error
 	for _, name := range libNames {
