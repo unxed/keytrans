@@ -529,3 +529,58 @@ func TestXkbcompTranslate_PositionalVKFallback(t *testing.T) {
 		t.Errorf("Expected fallback VirtualKeyCode to be VK_C (0x43), got 0x%X", event.VirtualKeyCode)
 	}
 }
+
+func TestCoreX11TranslateX11_PositionalVKFallback_GroupBased(t *testing.T) {
+	// Simulate keyboard map for QWERTY C key (keycode 54)
+	syms := make([]xproto.Keysym, 512)
+	offset := (54 - 8) * 4
+
+	syms[offset+0] = 0x63  // Group 0, Level 0 = 'c'
+	syms[offset+2] = 0x6d3 // Group 1, Level 0 = 'с' (Cyrillic es)
+
+	trans := &coreX11Translator{
+		minKeycode: 8,
+		maxKeycode: 100,
+		symsPerKey: 4,
+		syms:       syms,
+	}
+
+	// We test the lookup directly to simulate TranslateX11 behavior.
+	// 1. Current char is Cyrillic 'с' (Group 1, State 0)
+	sym := trans.lookup(54, 0, 1)
+	if sym != 0x6d3 {
+		t.Errorf("Expected Cyrillic 'с', got 0x%x", sym)
+	}
+
+	// 2. Trigger fallback logic: if vk is 0 and group > 0, lookup in Group 0
+	vk := keysymToVK(sym)
+	if vk != 0 {
+		t.Errorf("Expected VK to be 0 for Cyrillic 'с', got 0x%x", vk)
+	}
+
+	// Simulation of: if vk == 0 && group > 0 { baseSym := t.lookup(kc, state, 0); vk = keysymToVK(baseSym) }
+	baseSym := trans.lookup(54, 0, 0)
+	fallbackVK := keysymToVK(baseSym)
+
+	if fallbackVK != winkeys.VK_C {
+		t.Errorf("Positional fallback failed: expected VK_C (0x43), got 0x%X", fallbackVK)
+	}
+}
+
+func TestKeysymToVK_Cyrillic(t *testing.T) {
+	cyrillicEscSym := uint32(0x6d3) // 'с'
+	if vk := keysymToVK(cyrillicEscSym); vk != 0 {
+		t.Errorf("keysymToVK(Cyrillic_es) should be 0, got 0x%x", vk)
+	}
+}
+
+func TestTranslateModifiers_Extended(t *testing.T) {
+	// 2 = LockMask (CapsLock), 16 = Mod2Mask (usually NumLock)
+	state := uint16(2 | 16)
+	got := translateModifiers(state)
+	want := winkeys.CapsLockOn | winkeys.NumLockOn
+
+	if got != want {
+		t.Errorf("translateModifiers(2|16) = %v, want %v", got, want)
+	}
+}
