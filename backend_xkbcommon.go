@@ -1,0 +1,226 @@
+//go:build !noffi && (linux || freebsd || openbsd || netbsd || dragonfly)
+
+package keytrans
+
+import (
+	"unsafe"
+
+	"github.com/ebitengine/purego"
+	"github.com/jezek/xgb"
+	"github.com/jezek/xgb/xproto"
+)
+
+type xkbcommonTranslator struct {
+	lib     uintptr
+	context uintptr
+	keymap  uintptr
+	state   uintptr
+
+	// Symbols
+	fnContextNew          uintptr
+	fnContextUnref        uintptr
+	fnKeymapNewFromNames  uintptr
+	fnKeymapUnref         uintptr
+	fnStateNew            uintptr
+	fnStateUnref          uintptr
+	fnStateKeyGetUtf8     uintptr
+	fnStateUpdateMask     uintptr
+	fnStateKeyGetOneSym   uintptr
+}
+
+func newXkbcommonTranslator(info OSInfo) Translator {
+	conn, ok := info.XgbConn.(*xgb.Conn)
+	if !ok || conn == nil {
+		return nil
+	}
+
+	lib, err := purego.Dlopen("libxkbcommon.so.0", purego.RTLD_NOW|purego.RTLD_GLOBAL)
+	if err != nil {
+		return nil
+	}
+
+	t := &xkbcommonTranslator{lib: lib}
+	if err := t.resolveSymbols(); err != nil {
+		purego.Dlclose(lib)
+		return nil
+	}
+
+	// 1. Create context
+	ctx, _, _ := purego.SyscallN(t.fnContextNew, 0)
+	if ctx == 0 {
+		purego.Dlclose(lib)
+		return nil
+	}
+	t.context = ctx
+
+	// 2. Fetch RMLVO configuration from X server
+	rules, model, layout, variant, options := getXKBRulesNames(conn)
+
+	// Prepare C strings
+	var rulesPtr, modelPtr, layoutPtr, variantPtr, optionsPtr uintptr
+	if rules != "" {
+		rulesC := append([]byte(rules), 0)
+		rulesPtr = uintptr(unsafe.Pointer(&rulesC[0]))
+	}
+	if model != "" {
+		modelC := append([]byte(model), 0)
+		modelPtr = uintptr(unsafe.Pointer(&modelC[0]))
+	}
+	if layout != "" {
+		layoutC := append([]byte(layout), 0)
+		layoutPtr = uintptr(unsafe.Pointer(&layoutC[0]))
+	}
+	if variant != "" {
+		variantC := append([]byte(variant), 0)
+		variantPtr = uintptr(unsafe.Pointer(&variantC[0]))
+	}
+	if options != "" {
+		optionsC := append([]byte(options), 0)
+		optionsPtr = uintptr(unsafe.Pointer(&optionsC[0]))
+	}
+
+	names := [5]uintptr{rulesPtr, modelPtr, layoutPtr, variantPtr, optionsPtr}
+	namesPtr := uintptr(unsafe.Pointer(&names[0]))
+
+	// 3. Create keymap from names
+	km, _, _ := purego.SyscallN(t.fnKeymapNewFromNames, t.context, namesPtr, 0)
+	if km == 0 {
+		purego.SyscallN(t.fnContextUnref, t.context)
+		purego.Dlclose(lib)
+		return nil
+	}
+	t.keymap = km
+
+	// 4. Create state
+	state, _, _ := purego.SyscallN(t.fnStateNew, t.keymap)
+	if state == 0 {
+		purego.SyscallN(t.fnKeymapUnref, t.keymap)
+		purego.SyscallN(t.fnContextUnref, t.context)
+		purego.Dlclose(lib)
+		return nil
+	}
+	t.state = state
+
+	return t
+}
+
+func (t *xkbcommonTranslator) Name() string {
+	return "libxkbcommon"
+}
+
+func (t *xkbcommonTranslator) TranslateX11(detail uint8, state uint16, isDown bool) KeyEvent {
+	xkbKey := uint32(detail)
+
+	// Fetch keysym and character
+	var sym uint32
+	if t.fnStateKeyGetOneSym != 0 {
+		res, _, _ := purego.SyscallN(t.fnStateKeyGetOneSym, t.state, uintptr(xkbKey))
+		sym = uint32(res)
+	}
+
+	char := rune(0)
+	buf := make([]byte, 8)
+	bufPtr := uintptr(unsafe.Pointer(&buf[0]))
+	res, _, _ := purego.SyscallN(t.fnStateKeyGetUtf8, t.state, uintptr(xkbKey), bufPtr, uintptr(len(buf)))
+	if res > 0 {
+		for _, r := range string(buf[:res]) {
+			char = r
+			break
+		}
+	}
+
+	vk := keysymToVK(sym)
+	return KeyEvent{
+		VirtualKeyCode:  vk,
+		Char:            char,
+		ControlKeyState: translateModifiers(state),
+	}
+}
+
+func (t *xkbcommonTranslator) TranslateWayland(keycode uint32, isDown bool) KeyEvent {
+	// Offset applied for wayland (evdev -> xkb)
+	return t.TranslateX11(uint8(keycode+8), 0, isDown)
+}
+
+func (t *xkbcommonTranslator) UpdateWaylandModifiers(modsDepressed, modsLatched, modsLocked, group uint32) {
+	purego.SyscallN(t.fnStateUpdateMask, t.state,
+		uintptr(modsDepressed), uintptr(modsLatched), uintptr(modsLocked),
+		0, 0, uintptr(group),
+	)
+}
+
+func (t *xkbcommonTranslator) Close() {
+	if t.state != 0 {
+		purego.SyscallN(t.fnStateUnref, t.state)
+	}
+	if t.keymap != 0 {
+		purego.SyscallN(t.fnKeymapUnref, t.keymap)
+	}
+	if t.context != 0 {
+		purego.SyscallN(t.fnContextUnref, t.context)
+	}
+	if t.lib != 0 {
+		purego.Dlclose(t.lib)
+	}
+}
+
+func (t *xkbcommonTranslator) resolveSymbols() error {
+	var err error
+	resolve := func(name string) uintptr {
+		sym, serr := purego.Dlsym(t.lib, name)
+		if serr != nil {
+			err = serr
+		}
+		return sym
+	}
+
+	t.fnContextNew = resolve("xkb_context_new")
+	t.fnContextUnref = resolve("xkb_context_unref")
+	t.fnKeymapNewFromNames = resolve("xkb_keymap_new_from_names")
+	t.fnKeymapUnref = resolve("xkb_keymap_unref")
+	t.fnStateNew = resolve("xkb_state_new")
+	t.fnStateUnref = resolve("xkb_state_unref")
+	t.fnStateKeyGetUtf8 = resolve("xkb_state_key_get_utf8")
+	t.fnStateUpdateMask = resolve("xkb_state_update_mask")
+	t.fnStateKeyGetOneSym = resolve("xkb_state_key_get_one_sym")
+
+	return err
+}
+
+func getXKBRulesNames(conn *xgb.Conn) (string, string, string, string, string) {
+	setup := xproto.Setup(conn)
+	root := setup.DefaultScreen(conn).Root
+
+	atomCookie := xproto.InternAtom(conn, true, uint16(len("_XKB_RULES_NAMES")), "_XKB_RULES_NAMES")
+	atomReply, err := atomCookie.Reply()
+	if err != nil || atomReply.Atom == 0 {
+		return "", "", "", "", ""
+	}
+
+	propCookie := xproto.GetProperty(conn, false, root, atomReply.Atom, xproto.GetPropertyTypeAny, 0, 256)
+	propReply, err := propCookie.Reply()
+	if err != nil || len(propReply.Value) == 0 {
+		return "", "", "", "", ""
+	}
+
+	var parts []string
+	start := 0
+	for i, b := range propReply.Value {
+		if b == 0 {
+			parts = append(parts, string(propReply.Value[start:i]))
+			start = i + 1
+			if len(parts) >= 5 {
+				break
+			}
+		}
+	}
+
+	var rules, model, layout, variant, options string
+	if len(parts) >= 1 { rules = parts[0] }
+	if len(parts) >= 2 { model = parts[1] }
+	if len(parts) >= 3 { layout = parts[2] }
+	if len(parts) >= 4 { variant = parts[3] }
+	if len(parts) >= 5 { options = parts[4] }
+
+	return rules, model, layout, variant, options
+}
