@@ -177,6 +177,58 @@ func TestCoreX11Lookup_CaseSynthesis_Cyrillic(t *testing.T) {
 		t.Errorf("Cyrillic Case Synthesis failed: got 0x%x, want 0x%x (Й)", got, want)
 	}
 }
+func TestCoreX11Lookup_MultiLayoutGroupWidth(t *testing.T) {
+	// Simulate a bilingual layout (Eng + Rus) where symsPerKey = 12.
+	// 12 % 4 == 0, but Index 2 and 3 are letters (Cyrillic 'б' and 'Б'),
+	// so the heuristic must correctly identify groupWidth as 2.
+	syms := make([]xproto.Keysym, 12)
+	syms[0] = 0x002C // Index 0: comma
+	syms[1] = 0x003C // Index 1: less
+	syms[2] = 0x06C2 // Index 2: Cyrillic_be (Letter!)
+	syms[3] = 0x06E2 // Index 3: Cyrillic_BE (Letter!)
+	syms[4] = 0x00AB // Index 4: guillemetleft (AltGr for Group 0)
+
+	trans := &coreX11Translator{
+		minKeycode: 8,
+		maxKeycode: 100,
+		symsPerKey: 12,
+		syms:       syms,
+		altGrMask:  128, // Mod5
+	}
+
+	// 1. Without AltGr, Group 0 must resolve to Index 0 (comma)
+	if got := trans.lookup(8, 0, 0); got != 0x002C {
+		t.Errorf("GroupWidth heuristic failed (Base): got 0x%x, want 0x002C", got)
+	}
+
+	// 2. With AltGr active, it must identify groupWidth=2 and find Index 4 (guillemetleft)
+	// If the heuristic failed and used groupWidth=4, it would wrongly look at Index 2.
+	if got := trans.lookup(8, 128, 0); got != 0x00AB {
+		t.Errorf("GroupWidth heuristic failed (AltGr): got 0x%x, want 0x00AB", got)
+	}
+}
+
+func TestCoreX11Lookup_AltGrPriority(t *testing.T) {
+	// Verify that larger offsets (like 4) are checked before smaller ones (like 2).
+	// This prevents grabbing a base letter from Group 1 when looking for AltGr in Group 0.
+	syms := make([]xproto.Keysym, 8)
+	syms[0] = 0x002E // Index 0: period
+	syms[2] = 0x06C0 // Index 2: Cyrillic_yu
+	syms[4] = 0x00BB // Index 4: guillemetright
+
+	trans := &coreX11Translator{
+		minKeycode: 8,
+		maxKeycode: 100,
+		symsPerKey: 8,
+		syms:       syms,
+		altGrMask:  128,
+	}
+
+	// Must resolve to 0x00BB (Index 4), NOT 0x06C0 (Index 2)
+	if got := trans.lookup(8, 128, 0); got != 0x00BB {
+		t.Errorf("AltGr Priority check failed: got 0x%x, want 0x00BB", got)
+	}
+}
 
 func TestIsXkbcompOutputValid(t *testing.T) {
 	tests := []struct {
@@ -197,6 +249,11 @@ func TestIsXkbcompOutputValid(t *testing.T) {
 		{
 			name: "macOS XQuartz empty key bug",
 			data: "xkb_keycodes { <ESC> = 9; <RTRN> = 36; }; xkb_symbols { key < > { [ q, Q ] }; };",
+			want: false,
+		},
+		{
+			name: "Empty output",
+			data: "",
 			want: false,
 		},
 	}
