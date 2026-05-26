@@ -50,7 +50,7 @@ package main
 
 import (
 	"github.com/jezek/xgb"
-	"github.com/unxed/vtinput/keytrans"
+	"github.com/unxed/keytrans"
 )
 
 func main() {
