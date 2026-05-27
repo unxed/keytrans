@@ -74,6 +74,7 @@ func newX11XIMTranslator(info OSInfo) Translator {
 	conn, ok := info.XgbConn.(*xgb.Conn)
 	var xkbOpcode byte
 	if ok && conn != nil {
+		initKeycodeScheme(conn)
 		extCookie := xproto.QueryExtension(conn, uint16(len("XKEYBOARD")), "XKEYBOARD")
 		if extReply, err := extCookie.Reply(); err == nil && extReply.Present {
 			xkbOpcode = extReply.MajorOpcode
@@ -337,7 +338,7 @@ func (t *x11ximTranslator) TranslateX11(detail uint8, state uint16, isDown bool)
 
 	vk := keysymToVK(uint32(keysym))
 	if vk == 0 {
-		vk = getLayoutIndependentVK(detail)
+		vk = keycodeToVKMap[detail]
 	}
 	return winkeys.InputEvent{
 		Type:            winkeys.KeyEventType,

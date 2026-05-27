@@ -28,6 +28,7 @@ func newPureXKBTranslator(info OSInfo) Translator {
 	if !ok || conn == nil {
 		return nil
 	}
+	initKeycodeScheme(conn)
 
 	// Request XKEYBOARD extension to get the state dynamically
 	extCookie := xproto.QueryExtension(conn, uint16(len("XKEYBOARD")), "XKEYBOARD")
@@ -94,6 +95,10 @@ func (t *pureXKBTranslator) translateKeysym(detail uint8, isDown bool) winkeys.I
 		vk = keysymToVK(uint32(vkSym))
 
 		t.xkbState.UpdateMask(bm, lam, lom, bg, lag, log)
+	}
+
+	if vk == 0 {
+		vk = keycodeToVKMap[detail]
 	}
 
 	return winkeys.InputEvent{

@@ -81,6 +81,7 @@ func newCoreX11Translator(info OSInfo) Translator {
 	if err != nil {
 		return nil
 	}
+	initKeycodeScheme(conn)
 
 	// Request XKEYBOARD extension to get the state dynamically (matching purex11_host.go)
 	var xkbOpcode byte
@@ -159,6 +160,10 @@ func (t *coreX11Translator) TranslateX11(detail uint8, state uint16, isDown bool
 	sym := t.lookup(kc, state, group)
 	char := xkb.KeysymToUTF32(xkb.Keysym(sym))
 	vk := keysymToVK(sym)
+
+	if vk == 0 {
+		vk = keycodeToVKMap[detail]
+	}
 
 	// Positional VK fallback for alternate layouts
 	if vk == 0 {

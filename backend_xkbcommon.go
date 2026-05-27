@@ -41,6 +41,7 @@ func newXkbcommonTranslator(info OSInfo) Translator {
 	if !ok || conn == nil {
 		return nil
 	}
+	initKeycodeScheme(conn)
 
 	libNames := []string{"libxkbcommon.so.0", "libxkbcommon.0.dylib"}
 	var lib uintptr
@@ -187,6 +188,9 @@ func (t *xkbcommonTranslator) TranslateX11(detail uint8, state uint16, isDown bo
 	}
 
 	vk := keysymToVK(sym)
+	if vk == 0 {
+		vk = keycodeToVKMap[detail]
+	}
 	return winkeys.InputEvent{
 		Type:            winkeys.KeyEventType,
 		VirtualKeyCode:  vk,

@@ -1,8 +1,12 @@
 package keytrans
 
 import (
+	"sync"
+
+	"github.com/jezek/xgb"
+	"github.com/jezek/xgb/xproto"
+	"github.com/unxed/winkeys"
 	"github.com/unxed/xkb-go"
-    "github.com/unxed/winkeys"
 )
 
 // translateModifiers maps an X11 state mask to winkeys ControlKeyState.
@@ -95,6 +99,84 @@ var macosNativeKeycodeToKeysym = map[uint8]uint32{
 	54: 0x6d, // M
 	55: 0x2e, // .
 	58: 0x60, // `
+}
+var evdevToVK = [256]uint16{
+	9:  winkeys.VK_ESCAPE,
+	10: winkeys.VK_1, 11: winkeys.VK_2, 12: winkeys.VK_3, 13: winkeys.VK_4,
+	14: winkeys.VK_5, 15: winkeys.VK_6, 16: winkeys.VK_7, 17: winkeys.VK_8,
+	18: winkeys.VK_9, 19: winkeys.VK_0, 20: winkeys.VK_OEM_MINUS, 21: winkeys.VK_OEM_PLUS,
+	22: winkeys.VK_BACK, 23: winkeys.VK_TAB,
+	24: winkeys.VK_Q, 25: winkeys.VK_W, 26: winkeys.VK_E, 27: winkeys.VK_R,
+	28: winkeys.VK_T, 29: winkeys.VK_Y, 30: winkeys.VK_U, 31: winkeys.VK_I,
+	32: winkeys.VK_O, 33: winkeys.VK_P, 34: winkeys.VK_OEM_4, 35: winkeys.VK_OEM_6,
+	36: winkeys.VK_RETURN, 37: winkeys.VK_LCONTROL,
+	38: winkeys.VK_A, 39: winkeys.VK_S, 40: winkeys.VK_D, 41: winkeys.VK_F,
+	42: winkeys.VK_G, 43: winkeys.VK_H, 44: winkeys.VK_J, 45: winkeys.VK_K,
+	46: winkeys.VK_L, 47: winkeys.VK_OEM_1, 48: winkeys.VK_OEM_7, 49: winkeys.VK_OEM_3,
+	50: winkeys.VK_LSHIFT, 51: winkeys.VK_OEM_5,
+	52: winkeys.VK_Z, 53: winkeys.VK_X, 54: winkeys.VK_C, 55: winkeys.VK_V,
+	56: winkeys.VK_B, 57: winkeys.VK_N, 58: winkeys.VK_M, 59: winkeys.VK_OEM_COMMA,
+	60: winkeys.VK_OEM_PERIOD, 61: winkeys.VK_OEM_2, 62: winkeys.VK_RSHIFT,
+	64: winkeys.VK_LMENU, 65: winkeys.VK_SPACE, 108: winkeys.VK_RMENU,
+	133: winkeys.VK_LWIN, 134: winkeys.VK_RWIN, 135: winkeys.VK_APPS,
+}
+
+var macToVK = [256]uint16{
+	8: winkeys.VK_A, 9: winkeys.VK_S, 10: winkeys.VK_D, 11: winkeys.VK_F,
+	12: winkeys.VK_H, 13: winkeys.VK_G, 14: winkeys.VK_Z, 15: winkeys.VK_X,
+	16: winkeys.VK_C, 17: winkeys.VK_V, 19: winkeys.VK_B, 20: winkeys.VK_Q,
+	21: winkeys.VK_W, 22: winkeys.VK_E, 23: winkeys.VK_R, 24: winkeys.VK_Y,
+	25: winkeys.VK_T, 26: winkeys.VK_1, 27: winkeys.VK_2, 28: winkeys.VK_3,
+	29: winkeys.VK_4, 30: winkeys.VK_6, 31: winkeys.VK_5, 32: winkeys.VK_OEM_PLUS,
+	33: winkeys.VK_9, 34: winkeys.VK_7, 35: winkeys.VK_OEM_MINUS, 36: winkeys.VK_8,
+	37: winkeys.VK_0, 38: winkeys.VK_OEM_6, 39: winkeys.VK_O, 40: winkeys.VK_U,
+	41: winkeys.VK_OEM_4, 42: winkeys.VK_I, 43: winkeys.VK_P, 44: winkeys.VK_RETURN,
+	45: winkeys.VK_L, 46: winkeys.VK_J, 47: winkeys.VK_OEM_7, 48: winkeys.VK_K,
+	49: winkeys.VK_OEM_1, 50: winkeys.VK_OEM_5, 51: winkeys.VK_OEM_COMMA, 52: winkeys.VK_OEM_2,
+	53: winkeys.VK_N, 54: winkeys.VK_M, 55: winkeys.VK_OEM_PERIOD, 56: winkeys.VK_TAB,
+	57: winkeys.VK_SPACE, 58: winkeys.VK_OEM_3, 59: winkeys.VK_BACK, 61: winkeys.VK_ESCAPE,
+}
+
+var (
+	keycodeToVKMap [256]uint16
+	schemeOnce     sync.Once
+)
+
+func initKeycodeScheme(conn *xgb.Conn) {
+	schemeOnce.Do(func() {
+		copy(keycodeToVKMap[:], evdevToVK[:]) // Default to evdev
+		if conn == nil {
+			return
+		}
+		setup := xproto.Setup(conn)
+		if setup == nil {
+			return
+		}
+		minK := setup.MinKeycode
+		maxK := setup.MaxKeycode
+		count := byte(maxK - minK + 1)
+		reply, err := xproto.GetKeyboardMapping(conn, minK, count).Reply()
+		if err != nil {
+			return
+		}
+		symsPerKey := int(reply.KeysymsPerKeycode)
+		for kc := int(minK); kc <= int(maxK); kc++ {
+			if kc >= 256 {
+				break
+			}
+			offset := (kc - int(minK)) * symsPerKey
+			for i := 0; i < symsPerKey; i++ {
+				if offset+i < len(reply.Keysyms) && reply.Keysyms[offset+i] == 0xff0d { // Keysym Return
+					if kc == 44 { // macOS XQuartz mapped Return to 44
+						copy(keycodeToVKMap[:], macToVK[:])
+						return
+					} else if kc == 36 { // Standard Linux evdev Return is 36
+						return
+					}
+				}
+			}
+		}
+	})
 }
 // keysymToVK maps a keysym to a VirtualKeyCode.
 func keysymToVK(keysym uint32) uint16 {
