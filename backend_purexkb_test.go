@@ -100,4 +100,40 @@ func TestPureXKBTranslator(t *testing.T) {
 			}
 		})
 	}
+
+	// Verify that calling Close doesn't panic
+	tr.Close()
+}
+
+func TestPureXKBTranslator_Wayland(t *testing.T) {
+	keymap := xkb.TestKeymap()
+	if keymap == nil {
+		t.Fatal("Failed to get test keymap from xkb-go")
+	}
+
+	tr := &pureXKBTranslator{
+		conn:     nil,
+		xkbState: keymap.NewState(),
+	}
+
+	// 1. Test basic Wayland translation (evdev keycode 30 -> X11 keycode 38 -> 'a')
+	ev := tr.TranslateWayland(30, true)
+	if ev.Char != 'a' || ev.VirtualKeyCode != 0x41 {
+		t.Errorf("TranslateWayland failed for base key. Expected 'a'/0x41, got '%c'/0x%X",
+			ev.Char, ev.VirtualKeyCode)
+	}
+
+	// 2. Test Wayland modifier update (Shift)
+	tr.UpdateWaylandModifiers(1, 0, 0, 0) // modsDepressed = 1 (ShiftMask)
+	ev = tr.TranslateWayland(30, true)
+	if ev.Char != 'A' {
+		t.Errorf("TranslateWayland failed after UpdateWaylandModifiers. Expected 'A', got '%c'", ev.Char)
+	}
+
+	// 3. Test Wayland modifier reset
+	tr.UpdateWaylandModifiers(0, 0, 0, 0)
+	ev = tr.TranslateWayland(30, true)
+	if ev.Char != 'a' {
+		t.Errorf("TranslateWayland failed after resetting modifiers. Expected 'a', got '%c'", ev.Char)
+	}
 }

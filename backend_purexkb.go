@@ -71,6 +71,32 @@ func (t *pureXKBTranslator) Name() string {
 	return "purexkb"
 }
 
+func (t *pureXKBTranslator) translateKeysym(detail uint8, isDown bool) winkeys.InputEvent {
+	kc := xkb.Keycode(detail)
+	sym := t.xkbState.KeyGetOneSym(kc)
+	char := t.xkbState.KeyGetUTF32(kc)
+	vk := keysymToVK(uint32(sym))
+
+	if vk == 0 {
+		bm, lam, lom := t.xkbState.BaseMods(), t.xkbState.LatchedMods(), t.xkbState.LockedMods()
+		bg, lag, log := t.xkbState.BaseGroup(), t.xkbState.LatchedGroup(), t.xkbState.LockedGroup()
+
+		t.xkbState.UpdateMask(0, 0, 0, 0, 0, 0)
+		vkSym := t.xkbState.KeyGetOneSym(kc)
+		vk = keysymToVK(uint32(vkSym))
+
+		t.xkbState.UpdateMask(bm, lam, lom, bg, lag, log)
+	}
+
+	return winkeys.InputEvent{
+		Type:           winkeys.KeyEventType,
+		VirtualKeyCode: vk,
+		Char:           char,
+		KeyDown:        isDown,
+		RepeatCount:    1,
+	}
+}
+
 func (t *pureXKBTranslator) TranslateX11(detail uint8, state uint16, isDown bool) winkeys.InputEvent {
 	// Sync state with X server (only if connection is available)
 	if t.conn != nil {
@@ -99,35 +125,18 @@ func (t *pureXKBTranslator) TranslateX11(detail uint8, state uint16, isDown bool
 		t.xkbState.UpdateMask(mods, 0, 0, 0, 0, xkb.Group(group))
 	}
 
-	kc := xkb.Keycode(detail)
-	sym := t.xkbState.KeyGetOneSym(kc)
-	char := t.xkbState.KeyGetUTF32(kc)
-	vk := keysymToVK(uint32(sym))
-
-	if vk == 0 {
-		bm, lam, lom := t.xkbState.BaseMods(), t.xkbState.LatchedMods(), t.xkbState.LockedMods()
-		bg, lag, log := t.xkbState.BaseGroup(), t.xkbState.LatchedGroup(), t.xkbState.LockedGroup()
-
-		t.xkbState.UpdateMask(0, 0, 0, 0, 0, 0)
-		vkSym := t.xkbState.KeyGetOneSym(kc)
-		vk = keysymToVK(uint32(vkSym))
-
-		t.xkbState.UpdateMask(bm, lam, lom, bg, lag, log)
-	}
-
-	return winkeys.InputEvent{
-		Type:            winkeys.KeyEventType,
-		VirtualKeyCode:  vk,
-		Char:            char,
-		KeyDown:         isDown,
-		ControlKeyState: translateModifiers(state),
-		InputSource:     "purexkb",
-		RepeatCount:     1,
-	}
+	event := t.translateKeysym(detail, isDown)
+	event.ControlKeyState = translateModifiers(state)
+	event.InputSource = "purexkb"
+	return event
 }
 
 func (t *pureXKBTranslator) TranslateWayland(keycode uint32, isDown bool) winkeys.InputEvent {
-	return t.TranslateX11(uint8(keycode+8), 0, isDown)
+	// Wayland does not pack modifier state into the keypress event;
+	// it relies on the state previously set by UpdateWaylandModifiers.
+	event := t.translateKeysym(uint8(keycode+8), isDown)
+	event.InputSource = "purexkb"
+	return event
 }
 
 func (t *pureXKBTranslator) UpdateWaylandModifiers(modsDepressed, modsLatched, modsLocked, group uint32) {
