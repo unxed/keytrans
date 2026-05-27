@@ -176,8 +176,8 @@ func (t *coreX11Translator) lookup(kc int, state uint16, group int) uint32 {
 	altGr := (state & t.altGrMask) != 0
 
 	effectiveGroup := group
-	if modeSwitch {
-		effectiveGroup++
+	if modeSwitch && effectiveGroup == 0 {
+		effectiveGroup = 1
 	}
 
 	groupWidth := 2
