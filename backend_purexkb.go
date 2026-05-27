@@ -1,13 +1,7 @@
 package keytrans
 
 import (
-	"bytes"
 	"context"
-	"os/exec"
-	"regexp"
-	"strings"
-    "os"
-    "runtime"
 
 	"github.com/jezek/xgb"
 	"github.com/jezek/xgb/xproto"
@@ -15,18 +9,13 @@ import (
 	"github.com/unxed/xkb-go"
 )
 
-var (
-	keyDeclRegexp  = regexp.MustCompile(`(?i)key\s+<[^>]+>`)
-	emptyKeyRegexp = regexp.MustCompile(`(?i)key\s+<\s*>`)
-)
-
-type xkbcompTranslator struct {
+type pureXKBTranslator struct {
 	conn      *xgb.Conn
 	xkbOpcode byte
 	xkbState  *xkb.State
 }
 
-func newXkbcompTranslator(info OSInfo) Translator {
+func newPureXKBTranslator(info OSInfo) Translator {
 	conn, ok := info.XgbConn.(*xgb.Conn)
 	if !ok || conn == nil {
 		return nil
@@ -52,71 +41,37 @@ func newXkbcompTranslator(info OSInfo) Translator {
 		return nil
 	}
 
-	// Try to dump map via xkbcomp
-	path, err := exec.LookPath("xkbcomp")
-	if err != nil {
-		if runtime.GOOS == "windows" {
-			commonPaths := []string{
-				`C:\Program Files\VcXsrv\xkbcomp.exe`,
-				`C:\Program Files (x86)\VcXsrv\xkbcomp.exe`,
-				`C:\Program Files\Xming\xkbcomp.exe`,
-				`C:\Program Files (x86)\Xming\xkbcomp.exe`,
-				`C:\cygwin64\bin\xkbcomp.exe`,
-				`C:\cygwin\bin\xkbcomp.exe`,
-				`C:\msys64\usr\bin\xkbcomp.exe`,
-				`C:\msys64\mingw64\bin\xkbcomp.exe`,
-				`C:\msys64\mingw32\bin\xkbcomp.exe`,
-			}
-			for _, p := range commonPaths {
-				if _, serr := os.Stat(p); serr == nil {
-					path = p
-					err = nil
-					break
-				}
-			}
-		}
+	// Fetch RMLVO configuration from X server dynamically
+	rules, model, layout, variant, options := getXKBRulesNames(conn)
+	if layout == "" {
+		layout = "us" // Safe fallback
 	}
 
-	if err != nil || path == "" {
-		return nil
-	}
-
-	display := info.DisplayString
-	if display == "" {
-		display = ":0"
-	}
-
-	cmd := exec.Command(path, display, "-")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil || out.Len() == 0 {
-		return nil
-	}
-
-	// Validate output
-	if !isXkbcompOutputValid(out.Bytes()) {
-		return nil
-	}
-
-	// Parse with xkb-go
+	// Compile the keymap natively in Go memory using our updated include paths!
 	xkbCtx := xkb.NewContext(context.Background(), xkb.ContextNoFlags)
-	keymap, err := xkbCtx.NewKeymapFromString(out.Bytes(), xkb.KeymapFormatTextV1)
+	keymap, err := xkbCtx.NewKeymapFromNames(&xkb.RuleNames{
+		Rules:   rules,
+		Model:   model,
+		Layout:  layout,
+		Variant: variant,
+		Options: options,
+	})
 	if err != nil {
 		return nil
 	}
 
-	return &xkbcompTranslator{
+	return &pureXKBTranslator{
 		conn:      conn,
 		xkbOpcode: xkbOpcode,
 		xkbState:  keymap.NewState(),
 	}
 }
 
-func (t *xkbcompTranslator) Name() string {
-	return "xkbcomp"
+func (t *pureXKBTranslator) Name() string {
+	return "purexkb"
 }
 
-func (t *xkbcompTranslator) TranslateX11(detail uint8, state uint16, isDown bool) winkeys.InputEvent {
+func (t *pureXKBTranslator) TranslateX11(detail uint8, state uint16, isDown bool) winkeys.InputEvent {
 	// Sync state with X server (only if connection is available)
 	if t.conn != nil {
 		buf := make([]byte, 8)
@@ -137,6 +92,11 @@ func (t *xkbcompTranslator) TranslateX11(detail uint8, state uint16, isDown bool
 				xkb.Group(reply[13]),
 			)
 		}
+	} else {
+		// Fallback for tests or headless environments: update mask using event state
+		mods := xkb.ModMask(state & 0xFF)
+		group := uint32((state >> 13) & 3)
+		t.xkbState.UpdateMask(mods, 0, 0, 0, 0, xkb.Group(group))
 	}
 
 	kc := xkb.Keycode(detail)
@@ -161,34 +121,55 @@ func (t *xkbcompTranslator) TranslateX11(detail uint8, state uint16, isDown bool
 		Char:            char,
 		KeyDown:         isDown,
 		ControlKeyState: translateModifiers(state),
-		InputSource:     "xkbcomp",
+		InputSource:     "purexkb",
 		RepeatCount:     1,
 	}
 }
 
-func (t *xkbcompTranslator) TranslateWayland(keycode uint32, isDown bool) winkeys.InputEvent {
+func (t *pureXKBTranslator) TranslateWayland(keycode uint32, isDown bool) winkeys.InputEvent {
 	return t.TranslateX11(uint8(keycode+8), 0, isDown)
 }
 
-func (t *xkbcompTranslator) UpdateWaylandModifiers(modsDepressed, modsLatched, modsLocked, group uint32) {
+func (t *pureXKBTranslator) UpdateWaylandModifiers(modsDepressed, modsLatched, modsLocked, group uint32) {
 	t.xkbState.UpdateMask(xkb.ModMask(modsDepressed), xkb.ModMask(modsLatched), xkb.ModMask(modsLocked), 0, 0, xkb.Group(group))
 }
 
-func (t *xkbcompTranslator) Close() {}
+func (t *pureXKBTranslator) Close() {}
 
-func isXkbcompOutputValid(output []byte) bool {
-	if len(output) == 0 {
-		return false
+func getXKBRulesNames(conn *xgb.Conn) (string, string, string, string, string) {
+	setup := xproto.Setup(conn)
+	root := setup.DefaultScreen(conn).Root
+
+	atomCookie := xproto.InternAtom(conn, true, uint16(len("_XKB_RULES_NAMES")), "_XKB_RULES_NAMES")
+	atomReply, err := atomCookie.Reply()
+	if err != nil || atomReply.Atom == 0 {
+		return "", "", "", "", ""
 	}
-	str := string(output)
-	if !strings.Contains(str, "xkb_symbols") || !strings.Contains(str, "xkb_keycodes") {
-		return false
+
+	propCookie := xproto.GetProperty(conn, false, root, atomReply.Atom, xproto.GetPropertyTypeAny, 0, 256)
+	propReply, err := propCookie.Reply()
+	if err != nil || len(propReply.Value) == 0 {
+		return "", "", "", "", ""
 	}
-	if emptyKeyRegexp.MatchString(str) {
-		return false
+
+	var parts []string
+	start := 0
+	for i, b := range propReply.Value {
+		if b == 0 {
+			parts = append(parts, string(propReply.Value[start:i]))
+			start = i + 1
+			if len(parts) >= 5 {
+				break
+			}
+		}
 	}
-	if !strings.Contains(str, "<ESC>") || !strings.Contains(str, "<RTRN>") {
-		return false
-	}
-	return len(keyDeclRegexp.FindAllStringIndex(str, -1)) >= 10
+
+	var rules, model, layout, variant, options string
+	if len(parts) >= 1 { rules = parts[0] }
+	if len(parts) >= 2 { model = parts[1] }
+	if len(parts) >= 3 { layout = parts[2] }
+	if len(parts) >= 4 { variant = parts[3] }
+	if len(parts) >= 5 { options = parts[4] }
+
+	return rules, model, layout, variant, options
 }

@@ -22,6 +22,8 @@ func NewX11Translator(info OSInfo) Translator {
 			t = newXkbcommonTranslator(info)
 		case "libX11-XIM":
 			t = newX11XIMTranslator(info)
+		case "purexkb":
+			t = newPureXKBTranslator(info)
 		case "xkbcomp":
 			t = newXkbcompTranslator(info)
 		case "corex11":
@@ -46,6 +48,10 @@ func NewX11Translator(info OSInfo) Translator {
 			}
 		case "libX11-XIM":
 			if t := newX11XIMTranslator(info); t != nil {
+				return t
+			}
+		case "purexkb":
+			if t := newPureXKBTranslator(info); t != nil {
 				return t
 			}
 		case "xkbcomp":
@@ -73,13 +79,19 @@ func NewX11Translator(info OSInfo) Translator {
 		return t
 	}
 
-	// 3. Try xkbcomp + xkb-go (implemented in backend_xkbcomp.go)
+	// 3. Try purexkb (compiles rules natively in Go, implemented in backend_purexkb.go)
+	if t := newPureXKBTranslator(info); t != nil {
+		slog.Info("keytrans: using purexkb native-go backend")
+		return t
+	}
+
+	// 4. Try xkbcomp + xkb-go (implemented in backend_xkbcomp.go)
 	if t := newXkbcompTranslator(info); t != nil {
 		slog.Info("keytrans: using xkbcomp pure-go backend")
 		return t
 	}
 
-	// 4. Fallback to Core X11 Heuristics
+	// 5. Fallback to Core X11 Heuristics
 	slog.Info("keytrans: using Core X11 heuristics fallback")
 	return newCoreX11Translator(info)
 }
