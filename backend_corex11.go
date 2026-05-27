@@ -180,40 +180,41 @@ func (t *coreX11Translator) lookup(kc int, state uint16, group int) uint32 {
 		effectiveGroup = 1
 	}
 
-	groupWidth := 2
-	if t.symsPerKey > 4 && t.symsPerKey%4 == 0 {
-		groupWidth = 4
-		// Heuristic: If syms[2] or syms[3] is a letter, then this is actually
-		// a multi-group layout with groupWidth = 2 (e.g., English + Russian
-		// base layouts mapped to Group 0 and Group 1 of width 2).
-		if len(syms) > 3 {
-			r2 := xkb.KeysymToUTF32(xkb.Keysym(syms[2]))
-			r3 := xkb.KeysymToUTF32(xkb.Keysym(syms[3]))
-			if (r2 != 0 && unicode.IsLetter(r2)) || (r3 != 0 && unicode.IsLetter(r3)) {
-				groupWidth = 2
-			}
-		}
+	// Base groups are always pairs: G1=0,1; G2=2,3; G3=4,5; G4=6,7
+	baseIdx := effectiveGroup * 2
+	if baseIdx >= length {
+		baseIdx = 0 // Fallback if requested group is missing
 	}
 
-	idx := effectiveGroup * groupWidth
-	if idx >= length {
-		idx = 0
-	}
+	idx := baseIdx
 
 	if altGr {
-		if groupWidth == 4 {
-			if idx+2 < length && syms[idx+2] != 0 {
+		// Standard Xorg flattening places AltGr (Level 3/4) at offset +4
+		if idx+4 < length && syms[idx+4] != 0 {
+			idx += 4
+		} else if length == 4 && idx == 0 {
+			// Ambiguity resolution for 4-element arrays:
+			// [G1, G1_Shift, G2, G2_Shift] vs [G1, G1_Shift, G1_AltGr, G1_ShiftAltGr]
+
+			// If index 2 or 3 is a non-Latin letter, they are almost certainly Group 2 Base/Shift (e.g. Cyrillic)
+			isGroup2 := isNonLatinLetterKeysym(uint32(syms[2])) || isNonLatinLetterKeysym(uint32(syms[3]))
+
+			if !isGroup2 && syms[2] != 0 {
 				idx += 2
 			}
-		} else {
-			offsets := []int{4, 2, 6, 8}
-			for _, o := range offsets {
-				if idx+o < length && syms[idx+o] != 0 {
-					idx += o
-					break
-				}
-			}
 		}
+	}
+
+	// Safety fallback if calculated index is empty or out of bounds
+	if idx >= length || syms[idx] == 0 {
+		idx = baseIdx
+		if idx >= length || syms[idx] == 0 {
+			idx = 0
+		}
+	}
+
+	if idx >= length || syms[idx] == 0 {
+		return 0 // Absolute fallback, nothing found
 	}
 
 	baseSym := uint32(syms[idx])
@@ -238,10 +239,7 @@ func (t *coreX11Translator) lookup(kc int, state uint16, group int) uint32 {
 	}
 
 	if capsLock {
-		rBase := xkb.KeysymToUTF32(xkb.Keysym(baseSym))
-		rShifted := xkb.KeysymToUTF32(xkb.Keysym(shiftedSym))
-
-		if (rBase != 0 && unicode.IsLetter(rBase)) || (rShifted != 0 && unicode.IsLetter(rShifted)) {
+		if isLetterKeysym(baseSym) || isLetterKeysym(shiftedSym) {
 			if shift {
 				resSym = baseSym
 			} else {
@@ -260,4 +258,92 @@ func (t *coreX11Translator) lookup(kc int, state uint16, group int) uint32 {
 	}
 
 	return resSym
+}
+
+func isLetterKeysym(sym uint32) bool {
+	// Standard Latin A-Z, a-z
+	if (sym >= 0x41 && sym <= 0x5a) || (sym >= 0x61 && sym <= 0x7a) {
+		return true
+	}
+	// Latin-1 Supplement accented letters (excluding division and multiplication signs)
+	if sym >= 0xc0 && sym <= 0xff && sym != 0xd7 && sym != 0xf7 {
+		return true
+	}
+	// Cyrillic keysym range
+	if sym >= 0x06a0 && sym <= 0x06ff {
+		return true
+	}
+	// Greek keysym range
+	if sym >= 0x07a1 && sym <= 0x07f9 {
+		return true
+	}
+	// Arabic keysym range
+	if sym >= 0x05c1 && sym <= 0x05f2 {
+		return true
+	}
+	// Armenian keysym range
+	if sym >= 0x10000531 && sym <= 0x10000587 {
+		return true
+	}
+	// Georgian keysym range
+	if sym >= 0x10010d0 && sym <= 0x10010f6 {
+		return true
+	}
+	// Hangul keysym range
+	if sym >= 0x0ea1 && sym <= 0x0eff {
+		return true
+	}
+	// Unicode keysyms (0x01000000 + codepoint)
+	if sym >= 0x01000100 && sym <= 0x0100ffff {
+		r := rune(sym - 0x01000000)
+		return unicode.IsLetter(r)
+	}
+	return false
+}
+
+func isNonLatinLetterKeysym(sym uint32) bool {
+	// Cyrillic keysym range
+	if sym >= 0x06a0 && sym <= 0x06ff {
+		return true
+	}
+	// Greek keysym range
+	if sym >= 0x07a1 && sym <= 0x07f9 {
+		return true
+	}
+	// Hebrew keysym range
+	if sym >= 0x0ce0 && sym <= 0x0cfa {
+		return true
+	}
+	// Arabic keysym range
+	if sym >= 0x05c1 && sym <= 0x05f2 {
+		return true
+	}
+	// Thai keysym range
+	if sym >= 0x0da1 && sym <= 0x0df9 {
+		return true
+	}
+	// Armenian keysym range
+	if sym >= 0x10000531 && sym <= 0x10000587 {
+		return true
+	}
+	// Georgian keysym range
+	if sym >= 0x10010d0 && sym <= 0x10010f6 {
+		return true
+	}
+	// Hangul keysym range
+	if sym >= 0x0ea1 && sym <= 0x0eff {
+		return true
+	}
+	// Unicode keysyms (0x01000000 + codepoint)
+	if sym >= 0x01000100 && sym <= 0x0100ffff {
+		r := rune(sym - 0x01000000)
+		if unicode.IsLetter(r) {
+			// Exclude Latin-1, Latin Extended-A, Latin Extended-B
+			if r < 0x0250 {
+				return false
+			}
+			return true
+		}
+	}
+	return false
 }
