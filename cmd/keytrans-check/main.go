@@ -113,6 +113,12 @@ func main() {
 		case xproto.KeyReleaseEvent:
 			handleKey(logWrite, conn, translator, e.Detail, e.State, false)
 
+		case xproto.MappingNotifyEvent:
+			logWrite("--- MAPPING NOTIFY (Keyboard layout/mapping changed) ---\n")
+			translator.Close()
+			translator = keytrans.NewX11Translator(info)
+			logWrite("  Recreated translator backend: %s\n\n", translator.Name())
+
 		case xproto.ClientMessageEvent:
 			if deleteAtom != nil && e.Data.Data32[0] == uint32(deleteAtom.Atom) {
 				logWrite("Window close requested. Exiting.\n")

@@ -1,6 +1,9 @@
 package keytrans
 
-import "github.com/unxed/winkeys"
+import (
+	"github.com/unxed/xkb-go"
+    "github.com/unxed/winkeys"
+)
 
 // translateModifiers maps an X11 state mask to winkeys ControlKeyState.
 func translateModifiers(state uint16) winkeys.ControlKeyState {
@@ -23,6 +26,76 @@ func translateModifiers(state uint16) winkeys.ControlKeyState {
 	return mods
 }
 
+var usKeymapState *xkb.State
+
+func init() {
+	usKeymapState = xkb.TestKeymap().NewState()
+}
+
+func getLayoutIndependentVK(detail uint8) uint16 {
+	// 1. Try standard evdev keycode mapping via xkb-go's TestKeymap
+	if usKeymapState != nil {
+		sym := usKeymapState.KeyGetOneSym(xkb.Keycode(detail))
+		if vk := keysymToVK(uint32(sym)); vk != 0 {
+			return vk
+		}
+	}
+	// 2. Try macOS native keycode mapping (fallback for XQuartz with native keycodes)
+	if sym, ok := macosNativeKeycodeToKeysym[detail]; ok {
+		return keysymToVK(sym)
+	}
+	return 0
+}
+
+var macosNativeKeycodeToKeysym = map[uint8]uint32{
+	8:  0x61, // A
+	9:  0x73, // S
+	10: 0x64, // D
+	11: 0x66, // F
+	12: 0x68, // H
+	13: 0x67, // G
+	14: 0x7a, // Z
+	15: 0x78, // X
+	16: 0x63, // C
+	17: 0x76, // V
+	19: 0x62, // B
+	20: 0x71, // Q
+	21: 0x77, // W
+	22: 0x65, // E
+	23: 0x72, // R
+	24: 0x79, // Y
+	25: 0x74, // T
+	26: 0x31, // 1
+	27: 0x32, // 2
+	28: 0x33, // 3
+	29: 0x34, // 4
+	30: 0x36, // 6
+	31: 0x35, // 5
+	32: 0x3d, // =
+	33: 0x39, // 9
+	34: 0x37, // 7
+	35: 0x2d, // -
+	36: 0x38, // 8
+	37: 0x30, // 0
+	38: 0x5d, // ]
+	39: 0x6f, // O
+	40: 0x75, // U
+	41: 0x5b, // [
+	42: 0x69, // I
+	43: 0x70, // P
+	45: 0x6c, // L
+	46: 0x6a, // J
+	47: 0x27, // '
+	48: 0x6b, // K
+	49: 0x3b, // ;
+	50: 0x5c, // \
+	51: 0x2c, // ,
+	52: 0x2f, // /
+	53: 0x6e, // N
+	54: 0x6d, // M
+	55: 0x2e, // .
+	58: 0x60, // `
+}
 // keysymToVK maps a keysym to a VirtualKeyCode.
 func keysymToVK(keysym uint32) uint16 {
 	// 1. Direct mapping

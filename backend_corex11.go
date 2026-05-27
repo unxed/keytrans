@@ -2,6 +2,7 @@ package keytrans
 
 import (
 	"unicode"
+	"time"
 
 	"github.com/jezek/xgb"
 	"github.com/jezek/xgb/xproto"
@@ -20,50 +21,28 @@ type coreX11Translator struct {
 	modeSwitchMask uint16
 	altGrMask      uint16
 	xkbOpcode      byte
+	lastReload     time.Time
 }
 
-func newCoreX11Translator(info OSInfo) Translator {
-	conn, ok := info.XgbConn.(*xgb.Conn)
-	if !ok || conn == nil {
-		return nil
-	}
+func loadCoreKeymapData(conn *xgb.Conn, setup *xproto.SetupInfo) (min int, max int, symsPerKey int, syms []xproto.Keysym, err error) {
+	minKey := setup.MinKeycode
+	maxKey := setup.MaxKeycode
+	count := byte(maxKey - minKey + 1)
 
-	setup := xproto.Setup(conn)
-	min := setup.MinKeycode
-	max := setup.MaxKeycode
-	count := byte(max - min + 1)
-
-	reply, err := xproto.GetKeyboardMapping(conn, min, count).Reply()
+	reply, err := xproto.GetKeyboardMapping(conn, minKey, count).Reply()
 	if err != nil {
-		return nil
+		return 0, 0, 0, nil, err
 	}
 
-	// Request XKEYBOARD extension to get the state dynamically (matching purex11_host.go)
-	var xkbOpcode byte
-	extCookie := xproto.QueryExtension(conn, uint16(len("XKEYBOARD")), "XKEYBOARD")
-	if extReply, err := extCookie.Reply(); err == nil && extReply.Present {
-		xkbOpcode = extReply.MajorOpcode
-		// Init extension on server
-		buf := make([]byte, 8)
-		buf[0] = xkbOpcode
-		xgb.Put16(buf[2:], 2) // length
-		xgb.Put16(buf[4:], 1) // major
-		cookie := conn.NewCookie(true, true)
-		conn.NewRequest(buf, cookie)
-		_, _ = cookie.Reply()
-	}
+	return int(minKey), int(maxKey), int(reply.KeysymsPerKeycode), reply.Keysyms, nil
+}
 
-	t := &coreX11Translator{
-		conn:       conn,
-		minKeycode: int(min),
-		maxKeycode: int(max),
-		symsPerKey: int(reply.KeysymsPerKeycode),
-		syms:       reply.Keysyms,
-		xkbOpcode:  xkbOpcode,
-	}
+func (t *coreX11Translator) updateMasks() {
+	t.numLockMask = 0
+	t.modeSwitchMask = 0
+	t.altGrMask = 0
 
-	// ModMap Discovery
-	if modReply, err := xproto.GetModifierMapping(conn).Reply(); err == nil && modReply != nil {
+	if modReply, err := xproto.GetModifierMapping(t.conn).Reply(); err == nil && modReply != nil {
 		kpm := int(modReply.KeycodesPerModifier)
 		for modIndex := 0; modIndex < 8; modIndex++ {
 			mask := uint16(1 << modIndex)
@@ -89,6 +68,45 @@ func newCoreX11Translator(info OSInfo) Translator {
 
 	if t.numLockMask == 0 { t.numLockMask = 1 << 4 }
 	if t.altGrMask == 0 { t.altGrMask = 1 << 7 }
+}
+
+func newCoreX11Translator(info OSInfo) Translator {
+	conn, ok := info.XgbConn.(*xgb.Conn)
+	if !ok || conn == nil {
+		return nil
+	}
+
+	setup := xproto.Setup(conn)
+	min, max, symsPerKey, syms, err := loadCoreKeymapData(conn, setup)
+	if err != nil {
+		return nil
+	}
+
+	// Request XKEYBOARD extension to get the state dynamically (matching purex11_host.go)
+	var xkbOpcode byte
+	extCookie := xproto.QueryExtension(conn, uint16(len("XKEYBOARD")), "XKEYBOARD")
+	if extReply, err := extCookie.Reply(); err == nil && extReply.Present {
+		xkbOpcode = extReply.MajorOpcode
+		// Init extension on server
+		buf := make([]byte, 8)
+		buf[0] = xkbOpcode
+		xgb.Put16(buf[2:], 2) // length
+		xgb.Put16(buf[4:], 1) // major
+		cookie := conn.NewCookie(true, true)
+		conn.NewRequest(buf, cookie)
+		_, _ = cookie.Reply()
+	}
+
+	t := &coreX11Translator{
+		conn:       conn,
+		minKeycode: min,
+		maxKeycode: max,
+		symsPerKey: symsPerKey,
+		syms:       syms,
+		xkbOpcode:  xkbOpcode,
+	}
+
+	t.updateMasks()
 
 	return t
 }
@@ -98,6 +116,22 @@ func (t *coreX11Translator) Name() string {
 }
 
 func (t *coreX11Translator) TranslateX11(detail uint8, state uint16, isDown bool) winkeys.InputEvent {
+	// Periodic/forced reload to bypass macOS XQuartz MappingNotify bugs (only if connection is available)
+	if t.conn != nil {
+		now := time.Now()
+		if t.lastReload.IsZero() || now.Sub(t.lastReload) > 1 * time.Second {
+			t.lastReload = now
+			setup := xproto.Setup(t.conn)
+			if min, max, symsPerKey, syms, err := loadCoreKeymapData(t.conn, setup); err == nil {
+				t.minKeycode = min
+				t.maxKeycode = max
+				t.symsPerKey = symsPerKey
+				t.syms = syms
+				t.updateMasks()
+			}
+		}
+	}
+
 	kc := int(detail)
 
 	// Query active XKB group index dynamically from X server (matching purex11_host.go)
@@ -127,10 +161,8 @@ func (t *coreX11Translator) TranslateX11(detail uint8, state uint16, isDown bool
 	vk := keysymToVK(sym)
 
 	// Positional VK fallback for alternate layouts
-	isAlternateLayout := group > 0 || (state&t.modeSwitchMask) != 0
-	if vk == 0 && isAlternateLayout {
-		baseSym := t.lookup(kc, state&^t.modeSwitchMask, 0)
-		vk = keysymToVK(baseSym)
+	if vk == 0 {
+		vk = getLayoutIndependentVK(detail)
 	}
 
 	return winkeys.InputEvent{
@@ -347,3 +379,4 @@ func isNonLatinLetterKeysym(sym uint32) bool {
 	}
 	return false
 }
+

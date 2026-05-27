@@ -12,6 +12,16 @@ import (
 	"github.com/unxed/winkeys"
 )
 
+type ximStyles struct {
+	Count uint16
+	_     [6]byte
+	Style uintptr
+}
+
+var (
+	xCreateICPtr    uintptr
+	xGetIMValuesPtr uintptr
+)
 type x11ximTranslator struct {
 	lib                  uintptr
 	display              uintptr
@@ -30,6 +40,9 @@ type x11ximTranslator struct {
 	fnCreateIC           uintptr
 	fnDestroyIC          uintptr
 	fnSetLocaleModifiers uintptr
+	fnPending            uintptr
+	fnNextEvent          uintptr
+	xCreateIC            func(_ purego.Variadic, im uintptr, args ...any) uintptr
 }
 
 type xKeyEvent struct {
@@ -185,18 +198,62 @@ func newX11XIMTranslator(info OSInfo) Translator {
 	}
 	t.im = im
 
-	// 3. Create IC
+	// 3. Query supported input styles for diagnostics
+	var stylesPtr uintptr
+	nStyles := []byte("queryInputStyle\x00")
+	if xGetIMValuesPtr != 0 {
+		if trampolineXGetIMValuesAddr != 0 {
+			purego.SyscallN(trampolineXGetIMValuesAddr, im, uintptr(unsafe.Pointer(&nStyles[0])), uintptr(unsafe.Pointer(&stylesPtr)), uintptr(0))
+		} else {
+			purego.SyscallN(xGetIMValuesPtr, im, uintptr(unsafe.Pointer(&nStyles[0])), uintptr(unsafe.Pointer(&stylesPtr)), uintptr(0))
+		}
+	}
+
+	bestStyle := uintptr(0x0010 | 0x0400) // XIMPreeditNothing | XIMStatusNothing
+	if stylesPtr != 0 {
+		styles := (*ximStyles)(unsafe.Pointer(stylesPtr))
+		if styles.Count > 0 && styles.Style != 0 {
+			styleSlice := unsafe.Slice((*uintptr)(unsafe.Pointer(styles.Style)), int(styles.Count))
+			hasPreferred := false
+			for _, s := range styleSlice {
+				if s == (0x0010 | 0x0400) {
+					hasPreferred = true
+				}
+			}
+			if !hasPreferred {
+				for _, s := range styleSlice {
+					if s&0x0010 != 0 {
+						bestStyle = s
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// 4. Create IC
 	nInputStyle := []byte("inputStyle\x00")
 	nClientWindow := []byte("clientWindow\x00")
 	nFocusWindow := []byte("focusWindow\x00")
-	bestStyle := uintptr(0x0010 | 0x0400) // XIMPreeditNothing | XIMStatusNothing
 
-	ic, _, _ := purego.SyscallN(t.fnCreateIC, t.im,
-		uintptr(unsafe.Pointer(&nInputStyle[0])), bestStyle,
-		uintptr(unsafe.Pointer(&nClientWindow[0])), uintptr(info.WindowID),
-		uintptr(unsafe.Pointer(&nFocusWindow[0])), uintptr(info.WindowID),
-		0,
-	)
+	var ic uintptr
+	if trampolineXCreateICAddr != 0 {
+		res, _, _ := purego.SyscallN(trampolineXCreateICAddr, t.im,
+			uintptr(unsafe.Pointer(&nInputStyle[0])), bestStyle,
+			uintptr(unsafe.Pointer(&nClientWindow[0])), uintptr(info.WindowID),
+			uintptr(unsafe.Pointer(&nFocusWindow[0])), uintptr(info.WindowID),
+			uintptr(0))
+		ic = res
+	} else {
+		res, _, _ := purego.SyscallN(t.fnCreateIC, t.im,
+			uintptr(unsafe.Pointer(&nInputStyle[0])), bestStyle,
+			uintptr(unsafe.Pointer(&nClientWindow[0])), uintptr(info.WindowID),
+			uintptr(unsafe.Pointer(&nFocusWindow[0])), uintptr(info.WindowID),
+			0,
+		)
+		ic = res
+	}
+
 	if ic == 0 {
 		slog.Warn("keytrans: XCreateIC returned NULL", "windowID", info.WindowID)
 		purego.SyscallN(t.fnCloseIM, t.im)
@@ -214,6 +271,18 @@ func (t *x11ximTranslator) Name() string {
 }
 
 func (t *x11ximTranslator) TranslateX11(detail uint8, state uint16, isDown bool) winkeys.InputEvent {
+	// Poll Xlib connection to process MappingNotify and other internal Xlib events
+	if t.fnPending != 0 && t.fnNextEvent != 0 {
+		for {
+			n, _, _ := purego.SyscallN(t.fnPending, t.display)
+			if n == 0 {
+				break
+			}
+			var dummyEv [192]byte
+			purego.SyscallN(t.fnNextEvent, t.display, uintptr(unsafe.Pointer(&dummyEv)))
+		}
+	}
+
 	// Query active XKB group index dynamically from X server
 	group := 0
 	if t.conn != nil && t.xkbOpcode != 0 {
@@ -267,6 +336,9 @@ func (t *x11ximTranslator) TranslateX11(detail uint8, state uint16, isDown bool)
 	}
 
 	vk := keysymToVK(uint32(keysym))
+	if vk == 0 {
+		vk = getLayoutIndependentVK(detail)
+	}
 	return winkeys.InputEvent{
 		Type:            winkeys.KeyEventType,
 		VirtualKeyCode:  vk,
@@ -314,9 +386,17 @@ func (t *x11ximTranslator) resolveSymbols() error {
 	t.fnOpenIM = resolve("XOpenIM")
 	t.fnCloseIM = resolve("XCloseIM")
 	t.fnCreateIC = resolve("XCreateIC")
+	if t.fnCreateIC != 0 {
+		purego.RegisterFunc(&t.xCreateIC, t.fnCreateIC)
+	}
 	t.fnDestroyIC = resolve("XDestroyIC")
 	t.fnSetLocaleModifiers = resolve("XSetLocaleModifiers")
 	t.xutf8LookupStringPtr = resolve("Xutf8LookupString")
+	t.fnPending = resolve("XPending")
+	t.fnNextEvent = resolve("XNextEvent")
+
+	xCreateICPtr = t.fnCreateIC
+	xGetIMValuesPtr = resolve("XGetIMValues")
 
 	return err
 }
