@@ -249,6 +249,66 @@ func TestDynamicXkbUnimplemented(t *testing.T) {
 	tr.Close()
 }
 
+func TestDynamicXkbKeypadNumLock(t *testing.T) {
+	// Test compiling and running keypad keys with NumLock (Mod2) mapping
+	keymapStr := `xkb_keymap {
+		xkb_keycodes {
+			minimum = 8;
+			maximum = 255;
+			<I79> = 79;
+			<I106> = 106;
+		};
+		xkb_types {
+			type "DYN_ONE_LEVEL" {
+				modifiers = none;
+				map[none] = Level1;
+			};
+			type "DYN_KEYPAD" {
+				modifiers = Shift+Mod2;
+				map[Shift] = Level2;
+				map[Mod2] = Level2;
+				map[Shift+Mod2] = Level1;
+			};
+		};
+		xkb_compatibility {};
+		xkb_symbols {
+			key <I79> {
+				type[Group1] = "DYN_KEYPAD",
+				symbols[Group1] = [ KP_Home, KP_7 ]
+			};
+			key <I106> {
+				type[Group1] = "DYN_ONE_LEVEL",
+				symbols[Group1] = [ KP_Divide ]
+			};
+		};
+	};`
+
+	xkbCtx := xkb.NewContext(context.Background(), xkb.ContextNoFlags)
+	keymap, err := xkbCtx.NewKeymapFromString([]byte(keymapStr), xkb.KeymapFormatTextV1)
+	if err != nil {
+		t.Fatalf("Failed to compile keypad test keymap: %v", err)
+	}
+
+	state := keymap.NewState()
+
+	// 1. NumLock OFF (state = 0)
+	state.UpdateMask(0, 0, 0, 0, 0, 0)
+	if sym := state.KeyGetOneSym(79); sym != 0xFF95 { // KP_Home keysym
+		t.Errorf("NumLock OFF: expected KP_Home (0xFF95), got 0x%X", sym)
+	}
+	if sym := state.KeyGetOneSym(106); sym != 0xFFAF { // KP_Divide keysym
+		t.Errorf("NumLock OFF: expected KP_Divide (0xFFAF), got 0x%X", sym)
+	}
+
+	// 2. NumLock ON (Mod2 active = 0x10)
+	state.UpdateMask(0, 0, 0x10, 0, 0, 0) // Mod2 locked/active
+	if sym := state.KeyGetOneSym(79); sym != 0xFFB7 { // KP_7 keysym
+		t.Errorf("NumLock ON: expected KP_7 (0xFFB7), got 0x%X", sym)
+	}
+	if sym := state.KeyGetOneSym(106); sym != 0xFFAF { // KP_Divide keysym (must NOT change)
+		t.Errorf("NumLock ON: expected KP_Divide (0xFFAF), got 0x%X", sym)
+	}
+}
 func TestNewDynamicXkbTranslator_Failures(t *testing.T) {
 	// Nil connection
 	tr := newDynamicXkbTranslator(OSInfo{XgbConn: nil})

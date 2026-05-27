@@ -239,7 +239,7 @@ func (t *dynamicXkbTranslator) reloadKeymap() error {
 				}
 			} else if isLetterKeysym(gs.syms[0]) || isLetterKeysym(gs.syms[1]) {
 				typ = "DYN_ALPHABETIC"
-			} else if xkb.KeysymIsKeypad(xkb.Keysym(gs.syms[0])) || xkb.KeysymIsKeypad(xkb.Keysym(gs.syms[1])) {
+			} else if (xkb.KeysymIsKeypad(xkb.Keysym(gs.syms[0])) || xkb.KeysymIsKeypad(xkb.Keysym(gs.syms[1]))) && gs.syms[1] != 0 && gs.syms[0] != gs.syms[1] {
 				typ = "DYN_KEYPAD"
 			} else if gs.syms[1] == 0 || gs.syms[0] == gs.syms[1] {
 				typ = "DYN_ONE_LEVEL"
