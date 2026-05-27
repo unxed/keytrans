@@ -3,6 +3,7 @@
 package keytrans
 
 import (
+	"runtime"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -32,6 +33,10 @@ type xkbcommonTranslator struct {
 }
 
 func newXkbcommonTranslator(info OSInfo) Translator {
+	// Disable on macOS to prevent static layout lock issues with XQuartz
+	if runtime.GOOS == "darwin" {
+		return nil
+	}
 	conn, ok := info.XgbConn.(*xgb.Conn)
 	if !ok || conn == nil {
 		return nil

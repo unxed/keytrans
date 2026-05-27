@@ -27,6 +27,10 @@ type xkbcompTranslator struct {
 }
 
 func newXkbcompTranslator(info OSInfo) Translator {
+	// Disable on macOS to prevent static layout lock issues with XQuartz
+	if runtime.GOOS == "darwin" {
+		return nil
+	}
 	conn, ok := info.XgbConn.(*xgb.Conn)
 	if !ok || conn == nil {
 		return nil

@@ -2,6 +2,7 @@ package keytrans
 
 import (
 	"context"
+	"runtime"
 
 	"github.com/jezek/xgb"
 	"github.com/jezek/xgb/xproto"
@@ -16,6 +17,13 @@ type pureXKBTranslator struct {
 }
 
 func newPureXKBTranslator(info OSInfo) Translator {
+	// On macOS (Darwin) under XQuartz, compiled XKB state machines (like purexkb)
+	// cannot track layout switching because XQuartz rewrites the core keymap dynamically
+	// without updating the XKB rule names property. Thus, we must fail early on macOS
+	// to allow the factory to fall back to XIM or corex11 which handle keymap rewriting.
+	if runtime.GOOS == "darwin" {
+		return nil
+	}
 	conn, ok := info.XgbConn.(*xgb.Conn)
 	if !ok || conn == nil {
 		return nil
