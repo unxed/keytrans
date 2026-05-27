@@ -16,21 +16,25 @@ In the Go desktop development ecosystem, handling localized keyboard input (e.g.
 When initializing an X11 translator, `keytrans` attempts the following backends in order:
 
 ```
-┌────────────────────────────────────────────────────────┐
-│ 1. libxkbcommon (FFI)                                  │ -> Best. Native multi-layout, uses xkbcommon.
-└───────────────────────────┬────────────────────────────┘
-                            ▼ (fails or -tags noffi)
-┌────────────────────────────────────────────────────────┐
-│ 2. libX11 XIM (FFI)                                    │ -> Native X11 input method (Xutf8LookupString).
-└───────────────────────────┬────────────────────────────┘
-                            ▼ (fails)
-┌────────────────────────────────────────────────────────┐
-│ 3. xkbcomp (Pure Go)                                   │ -> Runs `xkbcomp $DISPLAY` and parses map with xkb-go.
-└───────────────────────────┬────────────────────────────┘
-                            ▼ (fails or xkbcomp missing)
-┌────────────────────────────────────────────────────────┐
-│ 4. Core X11 Heuristics (Pure Go)                       │ -> Reverse-engineers ModMap & keypad, zero-CGO.
-└────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│ 1. libxkbcommon (FFI)                        │ -> Best. Native multi-layout, uses xkbcommon.
+└──────────────────────┬───────────────────────┘
+                       ▼ (fails or -tags noffi)
+┌──────────────────────────────────────────────┐
+│ 2. libX11 XIM (FFI)                          │ -> Native X11 input method (Xutf8LookupString).
+└──────────────────────┬───────────────────────┘
+                       ▼ (fails or -tags noffi)
+┌──────────────────────────────────────────────┐
+│ 3. purexkb (Pure Go)                         │ -> Resolves layout rules from the X server and compiles via xkb-go.
+└──────────────────────┬───────────────────────┘
+                       ▼ (fails or xkeyboard-config missing)
+┌──────────────────────────────────────────────┐
+│ 3. xkbcomp (Pure Go)                         │ -> Runs `xkbcomp $DISPLAY` and parses map with xkb-go.
+└──────────────────────┬───────────────────────┘
+                       ▼ (fails or xkbcomp missing)
+┌──────────────────────────────────────────────┐
+│ 4. Core X11 Heuristics (Pure Go)             │ -> Reverse-engineers ModMap & keypad.
+└──────────────────────────────────────────────┘
 ```
 
 If the system has no dynamic loading capabilities or if compiled with `-tags noffi`, `keytrans` gracefully falls back to purely Go-based parsing (`xkbcomp` or `corex11` heuristics), keeping compilation 100% clean and portable.
