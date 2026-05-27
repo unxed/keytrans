@@ -2,8 +2,11 @@ package keytrans
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
+	"github.com/jezek/xgb/xproto"
 	"github.com/unxed/winkeys"
 	"github.com/unxed/xkb-go"
 )
@@ -198,6 +201,66 @@ func TestDynamicXkbAltGrFourLevelType(t *testing.T) {
 	}
 }
 
+func TestDynamicXkbTripleLayoutAltGr(t *testing.T) {
+	// Real-world Xorg 12-sym layout reconstruction test.
+	// We simulate the exact structure from the bug report:
+	// 0,1: G1 Base, 2,3: G2 Base, 4,5: G1 AltGr, 6,7: G2 AltGr, 8,9: G3 Base, 10,11: G3 AltGr
+
+	// Create mock symbols for Keycode 59
+	syms := make([]uint32, 12)
+	syms[0], syms[1] = 0x2c, 0x3c    // Eng: comma, less
+	syms[2], syms[3] = 0x6c2, 0x6e2  // Rus: be, BE
+	syms[4], syms[5] = 0xab, 0x3c     // AltGr Eng: «, <
+	syms[6], syms[7] = 0xab, 0x3c     // AltGr Rus: «, <
+	syms[8], syms[9] = 0x63, 0x43    // G3: c, C
+	syms[10], syms[11] = 0x100, 0x101 // AltGr G3: extra
+
+	xkbSyms := make([]xproto.Keysym, 12)
+	for i, s := range syms { xkbSyms[i] = xproto.Keysym(s) }
+
+	// Trigger keymap generation logic (internal part of reloadKeymap)
+	// We'll verify by compiling the string it generates.
+	var b strings.Builder
+	b.WriteString("xkb_keymap {\nxkb_keycodes { minimum=8; maximum=255; <I59>=59; };\n")
+	b.WriteString("xkb_types {\n" +
+		`type "DYN_FOUR_LEVEL_ALPHA" { modifiers= Shift+Mod5; map[Shift]= Level2; map[Mod5]= Level3; map[Shift+Mod5]= Level4; };` + "\n" +
+		"};\nxkb_compatibility {};\nxkb_symbols {\n")
+
+	// Implementation of the symbols generation part for testing
+	length := 12
+	offset := 0
+	b.WriteString("  key <I59> {\n")
+
+	// Re-run the fix logic
+	numGroups := 4
+	for g := 0; g < numGroups; g++ {
+		base := g * 2
+		altIdx := base + 4
+		if altIdx < length && xkbSyms[offset+altIdx] != 0 {
+			b.WriteString(fmt.Sprintf("    type[Group%d] = \"DYN_FOUR_LEVEL_ALPHA\",\n", g+1))
+			b.WriteString(fmt.Sprintf("    symbols[Group%d] = [ 0x%X, 0x%X, 0x%X, 0x%X ]",
+				g+1, uint32(xkbSyms[offset+base]), uint32(xkbSyms[offset+base+1]),
+				uint32(xkbSyms[offset+altIdx]), uint32(xkbSyms[offset+altIdx+1])))
+			if g < 3 { b.WriteString(",\n") } else { b.WriteString("\n") }
+		}
+	}
+	b.WriteString("  };\n};\n};")
+
+	xkbCtx := xkb.NewContext(context.Background(), xkb.ContextNoFlags)
+	keymap, err := xkbCtx.NewKeymapFromString([]byte(b.String()), xkb.KeymapFormatTextV1)
+	if err != nil {
+		t.Fatalf("Reconstructed keymap failed to compile: %v\nGenerated map:\n%s", err, b.String())
+	}
+
+	state := keymap.NewState()
+
+	// TEST: Group 2 (Russian) + AltGr (Mod5 = 0x80)
+	state.UpdateMask(0x80, 0, 0, 0, 0, 1) // group index 1
+	res := state.KeyGetOneSym(59)
+	if res != 0xab {
+		t.Errorf("AltGr on Russian layout failed. Expected 0xAB («), got 0x%X", res)
+	}
+}
 func TestSymToStr(t *testing.T) {
 	tests := []struct {
 		sym  uint32

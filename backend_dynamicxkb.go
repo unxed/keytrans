@@ -174,51 +174,42 @@ func (t *dynamicXkbTranslator) reloadKeymap() error {
 		}
 		var groups []groupSymbols
 
-		if symsPerKey >= 8 {
-			numGroups := symsPerKey / 4
-			for g := 0; g < numGroups; g++ {
-				base := g * 2
-				var gs groupSymbols
-				if base < length { gs.syms[0] = uint32(syms[offset+base]) }
-				if base+1 < length { gs.syms[1] = uint32(syms[offset+base+1]) }
-				if base+4 < length {
-					gs.syms[2] = uint32(syms[offset+base+4])
-					if gs.syms[2] != 0 {
-						gs.hasAltGr = true
-					}
-				}
-				if base+5 < length {
-					gs.syms[3] = uint32(syms[offset+base+5])
-					if gs.syms[3] != 0 {
-						gs.hasAltGr = true
-					}
-				}
-				groups = append(groups, gs)
-			}
-		} else if symsPerKey == 4 {
-			isGroup2 := false
-			if offset+2 < len(syms) {
-				isGroup2 = isGroup2 || isNonLatinLetterKeysym(uint32(syms[offset+2]))
-			}
-			if offset+3 < len(syms) {
-				isGroup2 = isGroup2 || isNonLatinLetterKeysym(uint32(syms[offset+3]))
+		if symsPerKey >= 4 {
+			numGroups := symsPerKey / 2
+			if numGroups > 4 {
+				numGroups = 4 // Core X11 usually caps at 4 layouts
 			}
 
-			if isGroup2 {
-				var gs1, gs2 groupSymbols
-				gs1.syms[0] = uint32(syms[offset+0])
-				gs1.syms[1] = uint32(syms[offset+1])
-				gs2.syms[0] = uint32(syms[offset+2])
-				gs2.syms[1] = uint32(syms[offset+3])
-				groups = append(groups, gs1, gs2)
-			} else {
+			for g := 0; g < numGroups; g++ {
+				base := g * 2
+				if base >= length || (syms[offset+base] == 0 && (base+1 >= length || syms[offset+base+1] == 0)) {
+					continue
+				}
+
 				var gs groupSymbols
-				gs.syms[0] = uint32(syms[offset+0])
-				gs.syms[1] = uint32(syms[offset+1])
-				gs.syms[2] = uint32(syms[offset+2])
-				gs.syms[3] = uint32(syms[offset+3])
-				if gs.syms[2] != 0 || gs.syms[3] != 0 {
+				gs.syms[0] = uint32(syms[offset+base])
+				if base+1 < length {
+					gs.syms[1] = uint32(syms[offset+base+1])
+				}
+
+				// AltGr heuristic (Fixed +4 offset for Xorg flattening)
+				altIdx := base + 4
+				if altIdx < length && syms[offset+altIdx] != 0 {
+					gs.syms[2] = uint32(syms[offset+altIdx])
 					gs.hasAltGr = true
+					if altIdx+1 < length {
+						gs.syms[3] = uint32(syms[offset+altIdx+1])
+					}
+				} else if length == 4 && g == 0 {
+					// Fallback for interleaved 4-symbol single layout
+					isG2 := isNonLatinLetterKeysym(uint32(syms[offset+2])) || isNonLatinLetterKeysym(uint32(syms[offset+3]))
+					if !isG2 && syms[offset+2] != 0 {
+						gs.syms[2] = uint32(syms[offset+2])
+						gs.hasAltGr = true
+						if offset+3 < length {
+							gs.syms[3] = uint32(syms[offset+3])
+						}
+					}
 				}
 				groups = append(groups, gs)
 			}
