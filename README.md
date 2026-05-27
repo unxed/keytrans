@@ -29,11 +29,11 @@ When initializing an X11 translator, `keytrans` attempts the following backends 
 └──────────────────────┬───────────────────────┘
                        ▼ (fails or xkeyboard-config missing)
 ┌──────────────────────────────────────────────┐
-│ 3. xkbcomp (Pure Go)                         │ -> Runs `xkbcomp $DISPLAY` and parses map with xkb-go.
+│ 4. xkbcomp (Pure Go)                         │ -> Runs `xkbcomp $DISPLAY` and parses map with xkb-go.
 └──────────────────────┬───────────────────────┘
                        ▼ (fails or xkbcomp missing)
 ┌──────────────────────────────────────────────┐
-│ 4. Core X11 Heuristics (Pure Go)             │ -> Reverse-engineers ModMap & keypad.
+│ 5. Core X11 Heuristics (Pure Go)             │ -> Reverse-engineers ModMap & keypad.
 └──────────────────────────────────────────────┘
 ```
 
@@ -56,6 +56,7 @@ info := keytrans.OSInfo{
 Supported backend strings:
 *   `"libxkbcommon"` (requires `libxkbcommon.so.0` and FFI support)
 *   `"libX11-XIM"` (requires `libX11.so.6` and FFI support)
+*   `"purexkb"` (requites `xkeyboard-config`)
 *   `"xkbcomp"` (requires `xkbcomp` binary available in `$PATH`)
 *   `"corex11"` (pure Go fallback, always available)
 
