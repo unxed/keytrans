@@ -1,6 +1,7 @@
 package keytrans
 
 import (
+	"context"
 	"testing"
 
 	"github.com/unxed/winkeys"
@@ -70,6 +71,130 @@ func TestDynamicXkbTranslator(t *testing.T) {
 					tc.expectedVK, event.VirtualKeyCode)
 			}
 		})
+	}
+}
+
+func TestDynamicXkbShiftLockType(t *testing.T) {
+	// Test compiling and running our custom DYN_TWO_LEVEL with ShiftLock mapping
+	keymapStr := `xkb_keymap {
+		xkb_keycodes {
+			minimum = 8;
+			maximum = 255;
+			<I9> = 9;
+		};
+		xkb_types {
+			type "DYN_TWO_LEVEL" {
+				modifiers = Shift+Lock;
+				map[Shift] = Level2;
+				map[Lock] = Level2;
+				map[Shift+Lock] = Level1;
+			};
+		};
+		xkb_compatibility {};
+		xkb_symbols {
+			key <I9> {
+				type[Group1] = "DYN_TWO_LEVEL",
+				symbols[Group1] = [ 1, exclam ]
+			};
+		};
+	};`
+
+	xkbCtx := xkb.NewContext(context.Background(), xkb.ContextNoFlags)
+	keymap, err := xkbCtx.NewKeymapFromString([]byte(keymapStr), xkb.KeymapFormatTextV1)
+	if err != nil {
+		t.Fatalf("Failed to compile ShiftLock test keymap: %v", err)
+	}
+
+	state := keymap.NewState()
+
+	// 1. Base (no modifiers) -> '1'
+	state.UpdateMask(0, 0, 0, 0, 0, 0)
+	if sym := state.KeyGetOneSym(9); sym != 0x31 {
+		t.Errorf("Expected '1' (0x31) without modifiers, got 0x%X", sym)
+	}
+
+	// 2. Shift active -> 'exclam'
+	state.UpdateMask(1, 0, 0, 0, 0, 0) // ShiftMask = 1
+	if sym := state.KeyGetOneSym(9); sym != 0x21 {
+		t.Errorf("Expected '!' (0x21) with Shift, got 0x%X", sym)
+	}
+
+	// 3. Lock (CapsLock) active -> 'exclam' (Traditional German ShiftLock behavior!)
+	state.UpdateMask(2, 0, 0, 0, 0, 0) // LockMask = 2
+	if sym := state.KeyGetOneSym(9); sym != 0x21 {
+		t.Errorf("Expected '!' (0x21) with CapsLock (ShiftLock behavior), got 0x%X", sym)
+	}
+
+	// 4. Shift + Lock active -> '1'
+	state.UpdateMask(3, 0, 0, 0, 0, 0) // Shift+Lock = 3
+	if sym := state.KeyGetOneSym(9); sym != 0x31 {
+		t.Errorf("Expected '1' (0x31) with Shift+CapsLock, got 0x%X", sym)
+	}
+}
+
+func TestDynamicXkbAltGrFourLevelType(t *testing.T) {
+	// Test compiling and running our custom DYN_FOUR_LEVEL_ALPHA type with Mod5/AltGr
+	keymapStr := `xkb_keymap {
+		xkb_keycodes {
+			minimum = 8;
+			maximum = 255;
+			<I59> = 59;
+		};
+		xkb_types {
+			type "DYN_FOUR_LEVEL_ALPHA" {
+				modifiers = Shift+Lock+Mod5;
+				map[Shift] = Level2;
+				map[Lock] = Level2;
+				map[Shift+Lock] = Level1;
+				map[Mod5] = Level3;
+				map[Shift+Mod5] = Level4;
+				map[Lock+Mod5] = Level4;
+				map[Shift+Lock+Mod5] = Level3;
+			};
+		};
+		xkb_compatibility {};
+		xkb_symbols {
+			key <I59> {
+				type[Group1] = "DYN_FOUR_LEVEL_ALPHA",
+				symbols[Group1] = [ comma, less, guillemetleft, less ],
+				type[Group2] = "DYN_FOUR_LEVEL_ALPHA",
+				symbols[Group2] = [ Cyrillic_be, Cyrillic_BE, guillemetleft, less ]
+			};
+		};
+	};`
+
+	xkbCtx := xkb.NewContext(context.Background(), xkb.ContextNoFlags)
+	keymap, err := xkbCtx.NewKeymapFromString([]byte(keymapStr), xkb.KeymapFormatTextV1)
+	if err != nil {
+		t.Fatalf("Failed to compile AltGr test keymap: %v", err)
+	}
+
+	state := keymap.NewState()
+
+	// Group 0 (English layout):
+	// 1. Base (no modifiers) -> 'comma' (0x2c)
+	state.UpdateMask(0, 0, 0, 0, 0, 0)
+	if sym := state.KeyGetOneSym(59); sym != 0x2c {
+		t.Errorf("Group 0 Base expected 'comma' (0x2c), got 0x%X", sym)
+	}
+
+	// 2. AltGr active (Mod5 = 0x80) -> 'guillemetleft' (0x00ab, typographical quote «)
+	state.UpdateMask(0x80, 0, 0, 0, 0, 0)
+	if sym := state.KeyGetOneSym(59); sym != 0x00ab {
+		t.Errorf("Group 0 AltGr expected 'guillemetleft' (0x00ab), got 0x%X", sym)
+	}
+
+	// Group 1 (Russian layout, group index = 1):
+	// 3. Base (no modifiers) -> 'Cyrillic_be' (0x06C2, 'б')
+	state.UpdateMask(0, 0, 0, 0, 0, 1) // lockedGroup = 1
+	if sym := state.KeyGetOneSym(59); sym != 0x06C2 {
+		t.Errorf("Group 1 Base expected 'Cyrillic_be' (0x06C2), got 0x%X", sym)
+	}
+
+	// 4. AltGr active (Mod5 = 0x80) -> 'guillemetleft' (0x00ab, typographical quote «)
+	state.UpdateMask(0x80, 0, 0, 0, 0, 1) // Mod5 active, lockedGroup = 1
+	if sym := state.KeyGetOneSym(59); sym != 0x00ab {
+		t.Errorf("Group 1 AltGr expected 'guillemetleft' (0x00ab), got 0x%X", sym)
 	}
 }
 
