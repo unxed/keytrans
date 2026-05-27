@@ -68,6 +68,20 @@ func (t *dynamicXkbTranslator) reloadKeymap() error {
 		return err
 	}
 
+	_, _, layout, _, options := getXKBRulesNames(t.conn)
+	useShiftLock := false
+	if strings.Contains(options, "caps:shiftlock") {
+		useShiftLock = true
+	} else if !strings.Contains(options, "caps:") {
+		for _, lay := range strings.Split(layout, ",") {
+			lay = strings.TrimSpace(lay)
+			if lay == "de" || lay == "fr" || lay == "cz" {
+				useShiftLock = true
+				break
+			}
+		}
+	}
+
 	// 1. Find Modifiers Mapping (specifically looking for NumLock)
 	numLockMod := "Mod2" // Default fallback
 	if modReply, err := xproto.GetModifierMapping(t.conn).Reply(); err == nil && modReply != nil {
@@ -123,11 +137,16 @@ func (t *dynamicXkbTranslator) reloadKeymap() error {
 
 	// 2b. Types
 	b.WriteString("xkb_types {\n")
-	b.WriteString(`  type "ONE_LEVEL" { modifiers= none; map[none]= Level1; };` + "\n")
-	b.WriteString(`  type "TWO_LEVEL" { modifiers= Shift; map[Shift]= Level2; };` + "\n")
-	b.WriteString(`  type "ALPHABETIC" { modifiers= Shift+Lock; map[Shift]= Level2; map[Lock]= Level2; map[Shift+Lock]= Level1; };` + "\n")
-	b.WriteString(fmt.Sprintf(`  type "KEYPAD" { modifiers= Shift+%s; map[Shift]= Level2; map[%s]= Level2; map[Shift+%s]= Level1; };`+"\n", numLockMod, numLockMod, numLockMod))
-	b.WriteString(fmt.Sprintf(`  type "FOUR_LEVEL" { modifiers= Shift+Lock+%s; map[Shift]= Level2; map[Lock]= Level2; map[Shift+Lock]= Level1; map[%s]= Level3; map[Shift+%s]= Level4; map[Lock+%s]= Level4; map[Shift+Lock+%s]= Level3; };`+"\n", level3Mod, level3Mod, level3Mod, level3Mod, level3Mod))
+	b.WriteString(`  type "DYN_ONE_LEVEL" { modifiers= none; map[none]= Level1; };` + "\n")
+	if useShiftLock {
+		b.WriteString(`  type "DYN_TWO_LEVEL" { modifiers= Shift+Lock; map[Shift]= Level2; map[Lock]= Level2; map[Shift+Lock]= Level1; };` + "\n")
+	} else {
+		b.WriteString(`  type "DYN_TWO_LEVEL" { modifiers= Shift; map[Shift]= Level2; };` + "\n")
+	}
+	b.WriteString(`  type "DYN_ALPHABETIC" { modifiers= Shift+Lock; map[Shift]= Level2; map[Lock]= Level2; map[Shift+Lock]= Level1; };` + "\n")
+	b.WriteString(fmt.Sprintf(`  type "DYN_KEYPAD" { modifiers= Shift+%s; map[Shift]= Level2; map[%s]= Level2; map[Shift+%s]= Level1; };`+"\n", numLockMod, numLockMod, numLockMod))
+	b.WriteString(fmt.Sprintf(`  type "DYN_FOUR_LEVEL" { modifiers= Shift+%s; map[Shift]= Level2; map[%s]= Level3; map[Shift+%s]= Level4; };`+"\n", level3Mod, level3Mod, level3Mod))
+	b.WriteString(fmt.Sprintf(`  type "DYN_FOUR_LEVEL_ALPHA" { modifiers= Shift+Lock+%s; map[Shift]= Level2; map[Lock]= Level2; map[Shift+Lock]= Level1; map[%s]= Level3; map[Shift+%s]= Level4; map[Lock+%s]= Level4; map[Shift+Lock+%s]= Level3; };`+"\n", level3Mod, level3Mod, level3Mod, level3Mod, level3Mod))
 	b.WriteString("};\n")
 
 	// 2c. Compatibility (Empty minimal)
@@ -211,19 +230,23 @@ func (t *dynamicXkbTranslator) reloadKeymap() error {
 		}
 
 		for g, gs := range groups {
-			typ := "TWO_LEVEL"
+			typ := "DYN_TWO_LEVEL"
 			if gs.hasAltGr {
-				typ = "FOUR_LEVEL"
+				if useShiftLock || isLetterKeysym(gs.syms[0]) || isLetterKeysym(gs.syms[1]) {
+					typ = "DYN_FOUR_LEVEL_ALPHA"
+				} else {
+					typ = "DYN_FOUR_LEVEL"
+				}
 			} else if isLetterKeysym(gs.syms[0]) || isLetterKeysym(gs.syms[1]) {
-				typ = "ALPHABETIC"
+				typ = "DYN_ALPHABETIC"
 			} else if xkb.KeysymIsKeypad(xkb.Keysym(gs.syms[0])) || xkb.KeysymIsKeypad(xkb.Keysym(gs.syms[1])) {
-				typ = "KEYPAD"
+				typ = "DYN_KEYPAD"
 			} else if gs.syms[1] == 0 || gs.syms[0] == gs.syms[1] {
-				typ = "ONE_LEVEL"
+				typ = "DYN_ONE_LEVEL"
 			}
 
 			b.WriteString(fmt.Sprintf("    type[Group%d] = \"%s\",\n", g+1, typ))
-			if typ == "FOUR_LEVEL" {
+			if typ == "DYN_FOUR_LEVEL" || typ == "DYN_FOUR_LEVEL_ALPHA" {
 				b.WriteString(fmt.Sprintf("    symbols[Group%d] = [ %s, %s, %s, %s ]", g+1, symToStr(gs.syms[0]), symToStr(gs.syms[1]), symToStr(gs.syms[2]), symToStr(gs.syms[3])))
 			} else {
 				b.WriteString(fmt.Sprintf("    symbols[Group%d] = [ %s, %s ]", g+1, symToStr(gs.syms[0]), symToStr(gs.syms[1])))
