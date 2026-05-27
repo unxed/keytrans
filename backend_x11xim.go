@@ -18,10 +18,6 @@ type ximStyles struct {
 	Style uintptr
 }
 
-var (
-	xCreateICPtr    uintptr
-	xGetIMValuesPtr uintptr
-)
 type x11ximTranslator struct {
 	lib                  uintptr
 	display              uintptr
@@ -43,6 +39,7 @@ type x11ximTranslator struct {
 	fnPending            uintptr
 	fnNextEvent          uintptr
 	xCreateIC            func(_ purego.Variadic, im uintptr, args ...any) uintptr
+	xGetIMValues         func(_ purego.Variadic, im uintptr, args ...any) uintptr
 }
 
 type xKeyEvent struct {
@@ -202,12 +199,8 @@ func newX11XIMTranslator(info OSInfo) Translator {
 	// 3. Query supported input styles for diagnostics
 	var stylesPtr uintptr
 	nStyles := []byte("queryInputStyle\x00")
-	if xGetIMValuesPtr != 0 {
-		if trampolineXGetIMValuesAddr != 0 {
-			purego.SyscallN(trampolineXGetIMValuesAddr, im, uintptr(unsafe.Pointer(&nStyles[0])), uintptr(unsafe.Pointer(&stylesPtr)), uintptr(0))
-		} else {
-			purego.SyscallN(xGetIMValuesPtr, im, uintptr(unsafe.Pointer(&nStyles[0])), uintptr(unsafe.Pointer(&stylesPtr)), uintptr(0))
-		}
+	if t.xGetIMValues != nil {
+		t.xGetIMValues(purego.Variadic{}, im, uintptr(unsafe.Pointer(&nStyles[0])), uintptr(unsafe.Pointer(&stylesPtr)), uintptr(0))
 	}
 
 	bestStyle := uintptr(0x0010 | 0x0400) // XIMPreeditNothing | XIMStatusNothing
@@ -238,21 +231,13 @@ func newX11XIMTranslator(info OSInfo) Translator {
 	nFocusWindow := []byte("focusWindow\x00")
 
 	var ic uintptr
-	if trampolineXCreateICAddr != 0 {
-		res, _, _ := purego.SyscallN(trampolineXCreateICAddr, t.im,
+	if t.xCreateIC != nil {
+		ic = t.xCreateIC(purego.Variadic{}, t.im,
 			uintptr(unsafe.Pointer(&nInputStyle[0])), bestStyle,
 			uintptr(unsafe.Pointer(&nClientWindow[0])), uintptr(info.WindowID),
 			uintptr(unsafe.Pointer(&nFocusWindow[0])), uintptr(info.WindowID),
-			uintptr(0))
-		ic = res
-	} else {
-		res, _, _ := purego.SyscallN(t.fnCreateIC, t.im,
-			uintptr(unsafe.Pointer(&nInputStyle[0])), bestStyle,
-			uintptr(unsafe.Pointer(&nClientWindow[0])), uintptr(info.WindowID),
-			uintptr(unsafe.Pointer(&nFocusWindow[0])), uintptr(info.WindowID),
-			0,
+			uintptr(0),
 		)
-		ic = res
 	}
 
 	if ic == 0 {
@@ -396,8 +381,10 @@ func (t *x11ximTranslator) resolveSymbols() error {
 	t.fnPending = resolve("XPending")
 	t.fnNextEvent = resolve("XNextEvent")
 
-	xCreateICPtr = t.fnCreateIC
-	xGetIMValuesPtr = resolve("XGetIMValues")
+	fnGetIMValues := resolve("XGetIMValues")
+	if fnGetIMValues != 0 {
+		purego.RegisterFunc(&t.xGetIMValues, fnGetIMValues)
+	}
 
 	return err
 }
