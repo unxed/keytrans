@@ -28,6 +28,8 @@ func NewX11Translator(info OSInfo) Translator {
 			t = newXkbcompTranslator(info)
 		case "corex11":
 			t = newCoreX11Translator(info)
+		case "dynamicxkb":
+			t = newDynamicXkbTranslator(info)
 		default:
 			slog.Error("keytrans: unknown forced backend in KEYTRANS_BACKEND", "backend", envBackend)
 			os.Exit(1)
