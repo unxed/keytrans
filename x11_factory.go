@@ -56,6 +56,10 @@ func NewX11Translator(info OSInfo) Translator {
 			if t := newPureXKBTranslator(info); t != nil {
 				return t
 			}
+		case "dynamicxkb":
+			if t := newDynamicXkbTranslator(info); t != nil {
+				return t
+			}
 		case "xkbcomp":
 			if t := newXkbcompTranslator(info); t != nil {
 				return t
@@ -87,13 +91,19 @@ func NewX11Translator(info OSInfo) Translator {
 		return t
 	}
 
-	// 4. Try xkbcomp + xkb-go (implemented in backend_xkbcomp.go)
+	// 4. Try dynamicxkb (implemented in backend_dynamicxkb.go)
+	if t := newDynamicXkbTranslator(info); t != nil {
+		slog.Info("keytrans: using dynamicxkb native-go backend")
+		return t
+	}
+
+	// 5. Try xkbcomp + xkb-go (implemented in backend_xkbcomp.go)
 	if t := newXkbcompTranslator(info); t != nil {
 		slog.Info("keytrans: using xkbcomp pure-go backend")
 		return t
 	}
 
-	// 5. Fallback to Core X11 Heuristics
+	// 6. Fallback to Core X11 Heuristics
 	slog.Info("keytrans: using Core X11 heuristics fallback")
 	return newCoreX11Translator(info)
 }

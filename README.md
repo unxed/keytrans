@@ -29,15 +29,19 @@ When initializing an X11 translator, `keytrans` attempts the following backends 
 └──────────────────────┬───────────────────────┘
                        ▼ (fails or xkeyboard-config missing)
 ┌──────────────────────────────────────────────┐
-│ 4. xkbcomp (Pure Go)                         │ -> Runs `xkbcomp $DISPLAY` and parses map with xkb-go.
+│ 4. dynamicxkb (Pure Go)                      │ -> Reconstructs XKB keymap dynamically in Go memory.
+└──────────────────────┬───────────────────────┘
+                       ▼ (fails or error)
+┌──────────────────────────────────────────────┐
+│ 5. xkbcomp (Pure Go)                         │ -> Runs `xkbcomp $DISPLAY` and parses map with xkb-go.
 └──────────────────────┬───────────────────────┘
                        ▼ (fails or xkbcomp missing)
 ┌──────────────────────────────────────────────┐
-│ 5. Core X11 Heuristics (Pure Go)             │ -> Reverse-engineers ModMap & keypad.
+│ 6. Core X11 Heuristics (Pure Go)             │ -> Reverse-engineers ModMap & keypad.
 └──────────────────────────────────────────────┘
 ```
 
-If the system has no dynamic loading capabilities or if compiled with `-tags noffi`, `keytrans` gracefully falls back to purely Go-based parsing (`xkbcomp` or `corex11` heuristics), keeping compilation 100% clean and portable.
+If the system has no dynamic loading capabilities or if compiled with `-tags noffi`, `keytrans` gracefully falls back to purely Go-based parsing (`dynamicxkb`, `xkbcomp` or `corex11` heuristics), keeping compilation 100% clean and portable.
 
 ## Manual Backend Selection
 
@@ -56,7 +60,8 @@ info := keytrans.OSInfo{
 Supported backend strings:
 *   `"libxkbcommon"` (requires `libxkbcommon.so.0` and FFI support)
 *   `"libX11-XIM"` (requires `libX11.so.6` and FFI support)
-*   `"purexkb"` (requites `xkeyboard-config`)
+*   `"purexkb"` (requires `xkeyboard-config`)
+*   `"dynamicxkb"` (pure Go, adaptive on-the-fly reconstruction)
 *   `"xkbcomp"` (requires `xkbcomp` binary available in `$PATH`)
 *   `"corex11"` (pure Go fallback, always available)
 
