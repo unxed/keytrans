@@ -38,6 +38,7 @@ type x11ximTranslator struct {
 	fnSetLocaleModifiers uintptr
 	fnPending            uintptr
 	fnNextEvent          uintptr
+	fnLookupString       uintptr
 	xCreateIC            func(_ purego.Variadic, im uintptr, args ...any) uintptr
 	xGetIMValues         func(_ purego.Variadic, im uintptr, args ...any) uintptr
 }
@@ -321,6 +322,16 @@ func (t *x11ximTranslator) TranslateX11(detail uint8, state uint16, isDown bool)
 		}
 	}
 
+	// XIM often ignores KeyRelease and returns no keysym.
+	// Fallback to XLookupString to retrieve the keysym.
+	if keysym == 0 && t.fnLookupString != 0 {
+		var dummyBuf [32]byte
+		purego.SyscallN(t.fnLookupString, uintptr(unsafe.Pointer(&ev)),
+			uintptr(unsafe.Pointer(&dummyBuf[0])), uintptr(len(dummyBuf)),
+			uintptr(unsafe.Pointer(&keysym)), 0,
+		)
+	}
+
 	vk := keysymToVK(uint32(keysym))
 	if vk == 0 {
 		vk = keycodeToVKMap[detail]
@@ -380,6 +391,7 @@ func (t *x11ximTranslator) resolveSymbols() error {
 	t.xutf8LookupStringPtr = resolve("Xutf8LookupString")
 	t.fnPending = resolve("XPending")
 	t.fnNextEvent = resolve("XNextEvent")
+	t.fnLookupString = resolve("XLookupString")
 
 	fnGetIMValues := resolve("XGetIMValues")
 	if fnGetIMValues != 0 {
