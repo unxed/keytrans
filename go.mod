@@ -9,6 +9,6 @@ require (
 	github.com/unxed/xkb-go v0.1.8
 )
 
-require github.com/go-webgpu/goffi v0.5.2 // indirect
+require github.com/go-webgpu/goffi v0.5.3 // indirect
 
-replace github.com/ebitengine/purego => github.com/unxed/pureffi v0.1.1
+replace github.com/ebitengine/purego => github.com/unxed/pureffi v0.1.2
