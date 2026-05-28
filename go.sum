@@ -6,5 +6,5 @@ github.com/unxed/pureffi v0.1.1 h1:TNHf4PzvOiRHL3AURla9ZOoSe7BBIat/sWGZ/c83G4I=
 github.com/unxed/pureffi v0.1.1/go.mod h1:jZ1QD7/kOLx///OQOAGYq2tkgKYnUSMETX2dSgww638=
 github.com/unxed/winkeys v0.1.0 h1:5yTt0jgEgL2M/8U36xl3S3xh2NCKTDDWE4Q7qnHo8x8=
 github.com/unxed/winkeys v0.1.0/go.mod h1:eCDbEJFdYcii0Fd4O9u+CAqjJ4SkkhWDkhikNFwBCd4=
-github.com/unxed/xkb-go v0.1.4 h1:VagDCaBmuV10RaX5hfHL9fZvdusrFfk38HKVeQh7UU4=
-github.com/unxed/xkb-go v0.1.4/go.mod h1:V3LaLLiIMPBQCGnPfTYN8gER39XW26AZBYeXkkZ/GWQ=
+github.com/unxed/xkb-go v0.1.5 h1:qe3+JiIcAAW5djg/rATpFaWRdfHXbsN9Ehf6SBv0FEs=
+github.com/unxed/xkb-go v0.1.5/go.mod h1:V3LaLLiIMPBQCGnPfTYN8gER39XW26AZBYeXkkZ/GWQ=

@@ -2,6 +2,7 @@ package keytrans
 
 import (
 	"context"
+	"log/slog"
 	"runtime"
 
 	"github.com/jezek/xgb"
@@ -66,6 +67,13 @@ func newPureXKBTranslator(info OSInfo) Translator {
 		Options: options,
 	})
 	if err != nil {
+		slog.Error("purexkb: NewKeymapFromNames failed to compile",
+			"err", err,
+			"rules", rules,
+			"model", model,
+			"layout", layout,
+			"variant", variant,
+			"options", options)
 		return nil
 	}
 
