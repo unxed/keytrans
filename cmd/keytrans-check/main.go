@@ -13,6 +13,44 @@ import (
 	"github.com/unxed/xkb-go"
 )
 
+func getXKBRulesNames(conn *xgb.Conn) (string, string, string, string, string) {
+	setup := xproto.Setup(conn)
+	root := setup.DefaultScreen(conn).Root
+
+	atomCookie := xproto.InternAtom(conn, true, uint16(len("_XKB_RULES_NAMES")), "_XKB_RULES_NAMES")
+	atomReply, err := atomCookie.Reply()
+	if err != nil || atomReply.Atom == 0 {
+		return "", "", "", "", ""
+	}
+
+	propCookie := xproto.GetProperty(conn, false, root, atomReply.Atom, xproto.GetPropertyTypeAny, 0, 256)
+	propReply, err := propCookie.Reply()
+	if err != nil || len(propReply.Value) == 0 {
+		return "", "", "", "", ""
+	}
+
+	var parts []string
+	start := 0
+	for i, b := range propReply.Value {
+		if b == 0 {
+			parts = append(parts, string(propReply.Value[start:i]))
+			start = i + 1
+			if len(parts) >= 5 {
+				break
+			}
+		}
+	}
+
+	var rules, model, layout, variant, options string
+	if len(parts) >= 1 { rules = parts[0] }
+	if len(parts) >= 2 { model = parts[1] }
+	if len(parts) >= 3 { layout = parts[2] }
+	if len(parts) >= 4 { variant = parts[3] }
+	if len(parts) >= 5 { options = parts[4] }
+
+	return rules, model, layout, variant, options
+}
+
 func main() {
 	// 1. Open log file
 	logFile, err := os.OpenFile("keytrans-debug.log", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
@@ -84,6 +122,41 @@ func main() {
 	// Map window to screen
 	xproto.MapWindow(conn, winID)
 
+	// Log System XKB Rules Names
+	rules, model, layout, variant, options := getXKBRulesNames(conn)
+	logWrite("[System XKB Rules Names]\n")
+	logWrite("  Rules:    %q\n", rules)
+	logWrite("  Model:    %q\n", model)
+	logWrite("  Layout:   %q\n", layout)
+	logWrite("  Variant:  %q\n", variant)
+	logWrite("  Options:  %q\n\n", options)
+
+	// Log Keycodes range and SymsPerKeycode
+	if reply, err := xproto.GetKeyboardMapping(conn, setup.MinKeycode, 1).Reply(); err == nil {
+		logWrite("[X11 Keyboard Map Geometry]\n")
+		logWrite("  Min Keycode: %d\n", setup.MinKeycode)
+		logWrite("  Max Keycode: %d\n", setup.MaxKeycode)
+		logWrite("  Keysyms Per Keycode: %d\n\n", reply.KeysymsPerKeycode)
+	}
+
+	// Log Modifier Mapping
+	if modReply, err := xproto.GetModifierMapping(conn).Reply(); err == nil && modReply != nil {
+		logWrite("[X11 Modifier Mapping]\n")
+		kpm := int(modReply.KeycodesPerModifier)
+		modNames := []string{"Shift", "Lock", "Control", "Mod1", "Mod2", "Mod3", "Mod4", "Mod5"}
+		for modIndex := 0; modIndex < 8; modIndex++ {
+			var kcList []string
+			for i := 0; i < kpm; i++ {
+				kc := modReply.Keycodes[modIndex*kpm+i]
+				if kc != 0 {
+					kcList = append(kcList, fmt.Sprintf("%d", kc))
+				}
+			}
+			logWrite("  %s (Index %d): keycodes [%s]\n", modNames[modIndex], modIndex, strings.Join(kcList, ", "))
+		}
+		logWrite("\n")
+	}
+
 	// 4. Initialize keytrans Translator
 	info := keytrans.OSInfo{
 		DisplayString: displayStr,
@@ -137,27 +210,67 @@ func handleKey(logWrite func(string, ...interface{}), conn *xgb.Conn, trans keyt
 	// Translate event
 	event := trans.TranslateX11(uint8(detail), state, isDown)
 
-	// Query raw keysym mapping directly from X server for this specific keycode (for diagnostics)
+	// Query XKB extension state directly from server
+	xkbGroupBase := 0
+	xkbGroupLocked := 0
+	xkbGroupLatched := 0
+	xkbModsDepressed := 0
+	xkbModsLatched := 0
+	xkbModsLocked := 0
+	xkbPresent := false
+
+	extCookie := xproto.QueryExtension(conn, uint16(len("XKEYBOARD")), "XKEYBOARD")
+	if extReply, err := extCookie.Reply(); err == nil && extReply.Present {
+		xkbOpcode := extReply.MajorOpcode
+		buf := make([]byte, 8)
+		buf[0] = xkbOpcode
+		buf[1] = 4                 // XkbGetState
+		xgb.Put16(buf[2:], 2)      // Length
+		xgb.Put16(buf[4:], 0x0100) // XkbUseCoreKbd
+
+		cookie := conn.NewCookie(true, true)
+		conn.NewRequest(buf, cookie)
+		if reply, err := cookie.Reply(); err == nil && len(reply) >= 18 {
+			xkbPresent = true
+			xkbModsDepressed = int(reply[9])
+			xkbModsLatched = int(reply[10])
+			xkbModsLocked = int(reply[11])
+			xkbGroupLocked = int(reply[13])
+			xkbGroupBase = int(int16(xgb.Get16(reply[14:])))
+			xkbGroupLatched = int(int16(xgb.Get16(reply[16:])))
+		}
+	}
+
+	// Query raw keysym mapping directly from X server for this specific keycode (with full indices)
 	var keysymList []string
 	if reply, err := xproto.GetKeyboardMapping(conn, detail, 1).Reply(); err == nil && reply != nil {
 		for i, sym := range reply.Keysyms {
-			if sym == 0 {
-				continue
+			name := ""
+			if sym != 0 {
+				name = xkb.KeysymGetName(xkb.Keysym(sym))
 			}
-			name := xkb.KeysymGetName(xkb.Keysym(sym))
 			if name == "" {
 				name = "NoSymbol"
 			}
-			keysymList = append(keysymList, fmt.Sprintf("    Index %d: 0x%04X (%s)", i, sym, name))
+			keysymList = append(keysymList, fmt.Sprintf("    Index %2d: 0x%04X (%s)", i, sym, name))
 		}
 	}
 
 	logWrite("--- KEY EVENT (%s) %s ---\n", direction, time.Now().Format("15:04:05.000"))
 	logWrite("  [X11 Raw Data]\n")
 	logWrite("    Keycode: %d\n", detail)
-	logWrite("    State:   0x%04X\n", state)
+	logWrite("    State:   0x%04X (binary: %016b)\n", state, state)
+	if xkbPresent {
+		logWrite("  [XKB Extension State]\n")
+		logWrite("    Mods Depressed: 0x%02X\n", xkbModsDepressed)
+		logWrite("    Mods Latched:   0x%02X\n", xkbModsLatched)
+		logWrite("    Mods Locked:    0x%02X\n", xkbModsLocked)
+		logWrite("    Group Base:     %d\n", xkbGroupBase)
+		logWrite("    Group Latched:  %d\n", xkbGroupLatched)
+		logWrite("    Group Locked:   %d\n", xkbGroupLocked)
+	}
 	if len(keysymList) > 0 {
-		logWrite("  [X11 Server Keysym Map for Keycode %d]\n", detail)
+		logWrite("  [X11 Server Keysym Map for Keycode %d (Total Keysyms: %d)]\n", detail, len(keysymList))
 		logWrite("%s\n", strings.Join(keysymList, "\n"))
 	}
 	logWrite("  [Translated Win32 InputEvent]\n")
