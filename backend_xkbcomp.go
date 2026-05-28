@@ -103,6 +103,9 @@ func newXkbcompTranslator(info OSInfo) Translator {
 		return nil
 	}
 
+	// Save the raw dumped keymap to a file for precise diagnostics
+	// _ = os.WriteFile("keytrans-xkbcomp.dump", out.Bytes(), 0644)
+
 	// Parse with xkb-go
 	xkbCtx := xkb.NewContext(context.Background(), xkb.ContextNoFlags)
 	keymap, err := xkbCtx.NewKeymapFromString(out.Bytes(), xkb.KeymapFormatTextV1)
