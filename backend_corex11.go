@@ -217,8 +217,37 @@ func (t *coreX11Translator) lookup(kc int, state uint16, group int) uint32 {
 		effectiveGroup = 1
 	}
 
-	// Base groups are always pairs: G1=0,1; G2=2,3; G3=4,5; G4=6,7
-	baseIdx := effectiveGroup * 2
+	baseIdx := 0
+	altIdx := 0
+	g := effectiveGroup
+
+	hasLegacyAltGr := true
+	if length >= 8 {
+		sym0 := uint32(syms[0])
+		sym4 := uint32(syms[4])
+		if sym4 != 0 && sym4 != sym0 && isBaseLayoutLetter(sym4) && isBaseLayoutLetter(sym0) {
+			hasLegacyAltGr = false
+		}
+	}
+
+	if hasLegacyAltGr {
+		if g < 2 {
+			baseIdx = g * 2
+			altIdx = baseIdx + 4
+		} else {
+			baseIdx = 8 + (g-2)*4
+			altIdx = baseIdx + 2
+		}
+	} else {
+		if g < 2 {
+			baseIdx = g * 2
+			altIdx = 0
+		} else {
+			baseIdx = 4 + (g-2)*4
+			altIdx = baseIdx + 2
+		}
+	}
+
 	if baseIdx >= length {
 		baseIdx = 0 // Fallback if requested group is missing
 	}
@@ -226,9 +255,8 @@ func (t *coreX11Translator) lookup(kc int, state uint16, group int) uint32 {
 	idx := baseIdx
 
 	if altGr {
-		// Standard Xorg flattening places AltGr (Level 3/4) at offset +4
-		if idx+4 < length && syms[idx+4] != 0 {
-			idx += 4
+		if altIdx < length && syms[altIdx] != 0 {
+			idx = altIdx
 		} else if length == 4 && idx == 0 {
 			// Ambiguity resolution for 4-element arrays:
 			// [G1, G1_Shift, G2, G2_Shift] vs [G1, G1_Shift, G1_AltGr, G1_ShiftAltGr]
@@ -237,7 +265,7 @@ func (t *coreX11Translator) lookup(kc int, state uint16, group int) uint32 {
 			isGroup2 := isNonLatinLetterKeysym(uint32(syms[2])) || isNonLatinLetterKeysym(uint32(syms[3]))
 
 			if !isGroup2 && syms[2] != 0 {
-				idx += 2
+				idx = 2
 			}
 		}
 	}
@@ -383,5 +411,11 @@ func isNonLatinLetterKeysym(sym uint32) bool {
 		}
 	}
 	return false
+}
+func isBaseLayoutLetter(sym uint32) bool {
+	if (sym >= 0x41 && sym <= 0x5a) || (sym >= 0x61 && sym <= 0x7a) {
+		return true
+	}
+	return isNonLatinLetterKeysym(sym)
 }
 

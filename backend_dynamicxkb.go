@@ -173,15 +173,48 @@ func (t *dynamicXkbTranslator) reloadKeymap() error {
 			hasAltGr bool
 		}
 		var groups []groupSymbols
-
+		
 		if symsPerKey >= 4 {
-			numGroups := symsPerKey / 2
-			if numGroups > 4 {
-				numGroups = 4 // Core X11 usually caps at 4 layouts
+			numGroups := 2
+			if symsPerKey > 8 {
+				numGroups = 2 + (symsPerKey-8)/4
+			}
+			if numGroups > 5 {
+				numGroups = 5
+			}
+
+			// Adaptive geometry detection to handle per-keycode layout compression
+			hasLegacyAltGr := true
+			if length >= 8 {
+				sym0 := uint32(syms[offset])
+				sym4 := uint32(syms[offset+4])
+				if sym4 != 0 && sym4 != sym0 && isBaseLayoutLetter(sym4) && isBaseLayoutLetter(sym0) {
+					hasLegacyAltGr = false
+				}
 			}
 
 			for g := 0; g < numGroups; g++ {
-				base := g * 2
+				base := 0
+				altIdx := 0
+
+				if hasLegacyAltGr {
+					if g < 2 {
+						base = g * 2
+						altIdx = base + 4
+					} else {
+						base = 8 + (g-2)*4
+						altIdx = base + 2
+					}
+				} else {
+					if g < 2 {
+						base = g * 2
+						altIdx = 0 // No AltGr on compacted G1/G2
+					} else {
+						base = 4 + (g-2)*4
+						altIdx = base + 2
+					}
+				}
+
 				if base >= length || (syms[offset+base] == 0 && (base+1 >= length || syms[offset+base+1] == 0)) {
 					continue
 				}
@@ -192,8 +225,6 @@ func (t *dynamicXkbTranslator) reloadKeymap() error {
 					gs.syms[1] = uint32(syms[offset+base+1])
 				}
 
-				// AltGr heuristic (Fixed +4 offset for Xorg flattening)
-				altIdx := base + 4
 				if altIdx < length && syms[offset+altIdx] != 0 {
 					gs.syms[2] = uint32(syms[offset+altIdx])
 					gs.hasAltGr = true
@@ -210,6 +241,11 @@ func (t *dynamicXkbTranslator) reloadKeymap() error {
 							gs.syms[3] = uint32(syms[offset+3])
 						}
 					}
+				}
+
+				// Skip empty padded groups
+				if gs.syms[0] == 0 && gs.syms[1] == 0 {
+					continue
 				}
 				groups = append(groups, gs)
 			}

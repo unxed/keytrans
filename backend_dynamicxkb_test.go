@@ -261,6 +261,97 @@ func TestDynamicXkbTripleLayoutAltGr(t *testing.T) {
 		t.Errorf("AltGr on Russian layout failed. Expected 0xAB («), got 0x%X", res)
 	}
 }
+func TestDynamicXkbTripleLayoutAltGr_NoLegacyAltGr(t *testing.T) {
+	// Reconstructed keymap test for 3 groups where G1 and G2 do NOT have AltGr (compacted layout)
+
+	// Create mock symbols for Keycode 52 (z -> y/z swap on QWERTZ)
+	syms := make([]uint32, 12)
+	syms[0], syms[1] = 0x7a, 0x5a    // G1 Base: z, Z
+	syms[2], syms[3] = 0x6d1, 0x6f1  // G2 Base: ya, YA
+	syms[4], syms[5] = 0x79, 0x59    // G3 Base: y, Y (offset 4 due to compression)
+	syms[6], syms[7] = 0x100203a, 0  // G3 AltGr: › (offset 6 due to compression)
+
+	xkbSyms := make([]xproto.Keysym, 12)
+	for i, s := range syms { xkbSyms[i] = xproto.Keysym(s) }
+
+	var b strings.Builder
+	b.WriteString("xkb_keymap {\nxkb_keycodes { minimum=8; maximum=255; <I52>=52; };\n")
+	b.WriteString("xkb_types {\n" +
+		`type "DYN_FOUR_LEVEL_ALPHA" { modifiers= Shift+Mod5; map[Shift]= Level2; map[Mod5]= Level3; map[Shift+Mod5]= Level4; };` + "\n" +
+		"};\nxkb_compatibility {};\nxkb_symbols {\n")
+
+	length := 12
+	offset := 0
+	b.WriteString("  key <I52> {\n")
+
+	numGroups := 3
+
+	// Adaptive logic test
+	hasLegacyAltGr := true
+	sym0 := uint32(xkbSyms[0])
+	sym4 := uint32(xkbSyms[4])
+	if sym4 != 0 && sym4 != sym0 && isBaseLayoutLetter(sym4) && isBaseLayoutLetter(sym0) {
+		hasLegacyAltGr = false
+	}
+
+	for g := 0; g < numGroups; g++ {
+		base := 0
+		altIdx := 0
+		if hasLegacyAltGr {
+			if g < 2 {
+				base = g * 2
+				altIdx = base + 4
+			} else {
+				base = 8 + (g-2)*4
+				altIdx = base + 2
+			}
+		} else {
+			if g < 2 {
+				base = g * 2
+				altIdx = 0
+			} else {
+				base = 4 + (g-2)*4
+				altIdx = base + 2
+			}
+		}
+
+		if base < length {
+			b.WriteString(fmt.Sprintf("    type[Group%d] = \"DYN_FOUR_LEVEL_ALPHA\",\n", g+1))
+			if altIdx < length && xkbSyms[offset+altIdx] != 0 {
+				b.WriteString(fmt.Sprintf("    symbols[Group%d] = [ 0x%X, 0x%X, 0x%X, 0x%X ]",
+					g+1, uint32(xkbSyms[offset+base]), uint32(xkbSyms[offset+base+1]),
+					uint32(xkbSyms[offset+altIdx]), uint32(xkbSyms[offset+altIdx+1])))
+			} else {
+				b.WriteString(fmt.Sprintf("    symbols[Group%d] = [ 0x%X, 0x%X ]",
+					g+1, uint32(xkbSyms[offset+base]), uint32(xkbSyms[offset+base+1])))
+			}
+			if g < 2 { b.WriteString(",\n") } else { b.WriteString("\n") }
+		}
+	}
+	b.WriteString("  };\n};\n};")
+
+	xkbCtx := xkb.NewContext(context.Background(), xkb.ContextNoFlags)
+	keymap, err := xkbCtx.NewKeymapFromString([]byte(b.String()), xkb.KeymapFormatTextV1)
+	if err != nil {
+		t.Fatalf("Reconstructed compacted keymap failed to compile: %v\nGenerated map:\n%s", err, b.String())
+	}
+
+	state := keymap.NewState()
+
+	// TEST 1: Group 3 (German) Base -> 'y' (0x79)
+	state.UpdateMask(0, 0, 0, 0, 0, 2) // group index 2 (lockedGroup)
+	res := state.KeyGetOneSym(52)
+	if res != 0x79 {
+		t.Errorf("Compacted layout Base on German failed. Expected 0x79 (y), got 0x%X", res)
+	}
+
+	// TEST 2: Group 3 (German) + AltGr (Mod5 = 0x80) -> '›' (0x100203a)
+	state.UpdateMask(0x80, 0, 0, 0, 0, 2)
+	res = state.KeyGetOneSym(52)
+	if res != 0x100203a {
+		t.Errorf("Compacted layout AltGr on German failed. Expected 0x100203A (›), got 0x%X", res)
+	}
+}
 func TestSymToStr(t *testing.T) {
 	tests := []struct {
 		sym  uint32
