@@ -1,6 +1,7 @@
 package keytrans
 
 import (
+	"os"
 	"sync"
 
 	"github.com/jezek/xgb"
@@ -287,4 +288,19 @@ var keysymToVKMap = map[uint32]uint16{
 	0xff9d: winkeys.VK_CLEAR,
 	0xff9e: winkeys.VK_INSERT,
 	0xff9f: winkeys.VK_DELETE,
+}// isXWayland returns true if the connection is running under XWayland.
+func isXWayland(conn *xgb.Conn) bool {
+	if conn == nil {
+		return false
+	}
+	if os.Getenv("WAYLAND_DISPLAY") != "" {
+		return true
+	}
+	// Check WL_SURFACE_ID atom to confirm XWayland
+	cookie := xproto.InternAtom(conn, true, uint16(len("WL_SURFACE_ID")), "WL_SURFACE_ID")
+	reply, err := cookie.Reply()
+	if err == nil && reply.Atom != 0 {
+		return true
+	}
+	return false
 }

@@ -41,6 +41,9 @@ func newXkbcommonTranslator(info OSInfo) Translator {
 	if !ok || conn == nil {
 		return nil
 	}
+	if isXWayland(conn) {
+		return nil
+	}
 	initKeycodeScheme(conn)
 
 	libNames := []string{"libxkbcommon.so.0", "libxkbcommon.0.dylib"}

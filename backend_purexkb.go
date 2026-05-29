@@ -29,6 +29,9 @@ func newPureXKBTranslator(info OSInfo) Translator {
 	if !ok || conn == nil {
 		return nil
 	}
+	if isXWayland(conn) {
+		return nil
+	}
 	initKeycodeScheme(conn)
 
 	// Request XKEYBOARD extension to get the state dynamically
