@@ -2,8 +2,8 @@ github.com/go-webgpu/goffi v0.5.3 h1:Ckc94SdHO42bIb0oEapRIcv+jKjhjGJfb9zPEvNKC7U
 github.com/go-webgpu/goffi v0.5.3/go.mod h1:wfoxNsJkU+5RFbV1kNN1kunhc1lFHuJKK3zpgx08/uM=
 github.com/jezek/xgb v1.3.1 h1:NQCAEfQyzN+3RjWUSHBuVIxQcy2YfG3/mNvKfs/0rEg=
 github.com/jezek/xgb v1.3.1/go.mod h1:nrhwO0FX/enq75I7Y7G8iN1ubpSGZEiA3v9e9GyRFlk=
-github.com/unxed/pureffi v0.1.6 h1:3/063uoBa41YNjCqe6BdXBaNo2/ExmRuBBu8XwmnSjA=
-github.com/unxed/pureffi v0.1.6/go.mod h1:CzJEr4SSVyDO6EpD+7VP4skxnNnxZyPSCqcbrTR2Ls4=
+github.com/unxed/pureffi v0.1.7 h1:y0E6MLOcpN4aiDrmSrZM2sH/u1xOQmI8+vWDjX0Dx3c=
+github.com/unxed/pureffi v0.1.7/go.mod h1:CzJEr4SSVyDO6EpD+7VP4skxnNnxZyPSCqcbrTR2Ls4=
 github.com/unxed/winkeys v0.1.0 h1:5yTt0jgEgL2M/8U36xl3S3xh2NCKTDDWE4Q7qnHo8x8=
 github.com/unxed/winkeys v0.1.0/go.mod h1:eCDbEJFdYcii0Fd4O9u+CAqjJ4SkkhWDkhikNFwBCd4=
 github.com/unxed/xkb-go v0.1.8 h1:hqPI2wJw2LQ7YOqghNYat/TJF3pFamCCPjhxI5I3lhU=
