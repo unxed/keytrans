@@ -179,6 +179,7 @@ func initKeycodeScheme(conn *xgb.Conn) {
 		}
 	})
 }
+
 // keysymToVK maps a keysym to a VirtualKeyCode.
 func keysymToVK(keysym uint32) uint16 {
 	// 1. Direct mapping
@@ -288,7 +289,7 @@ var keysymToVKMap = map[uint32]uint16{
 	0xff9d: winkeys.VK_CLEAR,
 	0xff9e: winkeys.VK_INSERT,
 	0xff9f: winkeys.VK_DELETE,
-}// isXWayland returns true if the connection is running under XWayland.
+} // isXWayland returns true if the connection is running under XWayland.
 func isXWayland(conn *xgb.Conn) bool {
 	if conn == nil {
 		return false

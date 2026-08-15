@@ -21,15 +21,15 @@ type xkbcommonTranslator struct {
 	xkbOpcode byte
 
 	// Symbols
-	fnContextNew          uintptr
-	fnContextUnref        uintptr
-	fnKeymapNewFromNames  uintptr
-	fnKeymapUnref         uintptr
-	fnStateNew            uintptr
-	fnStateUnref          uintptr
-	fnStateKeyGetUtf8     uintptr
-	fnStateUpdateMask     uintptr
-	fnStateKeyGetOneSym   uintptr
+	fnContextNew         uintptr
+	fnContextUnref       uintptr
+	fnKeymapNewFromNames uintptr
+	fnKeymapUnref        uintptr
+	fnStateNew           uintptr
+	fnStateUnref         uintptr
+	fnStateKeyGetUtf8    uintptr
+	fnStateUpdateMask    uintptr
+	fnStateKeyGetOneSym  uintptr
 }
 
 func newXkbcommonTranslator(info OSInfo) Translator {
@@ -149,8 +149,8 @@ func (t *xkbcommonTranslator) TranslateX11(detail uint8, state uint16, isDown bo
 	if t.conn != nil {
 		buf := make([]byte, 8)
 		buf[0] = t.xkbOpcode
-		buf[1] = 4            // XkbGetState
-		xgb.Put16(buf[2:], 2) // Length
+		buf[1] = 4                 // XkbGetState
+		xgb.Put16(buf[2:], 2)      // Length
 		xgb.Put16(buf[4:], 0x0100) // XkbUseCoreKbd
 
 		cookie := t.conn.NewCookie(true, true)
@@ -254,4 +254,3 @@ func (t *xkbcommonTranslator) resolveSymbols() error {
 
 	return err
 }
-

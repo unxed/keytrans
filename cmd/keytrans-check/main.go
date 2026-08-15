@@ -42,11 +42,21 @@ func getXKBRulesNames(conn *xgb.Conn) (string, string, string, string, string) {
 	}
 
 	var rules, model, layout, variant, options string
-	if len(parts) >= 1 { rules = parts[0] }
-	if len(parts) >= 2 { model = parts[1] }
-	if len(parts) >= 3 { layout = parts[2] }
-	if len(parts) >= 4 { variant = parts[3] }
-	if len(parts) >= 5 { options = parts[4] }
+	if len(parts) >= 1 {
+		rules = parts[0]
+	}
+	if len(parts) >= 2 {
+		model = parts[1]
+	}
+	if len(parts) >= 3 {
+		layout = parts[2]
+	}
+	if len(parts) >= 4 {
+		variant = parts[3]
+	}
+	if len(parts) >= 5 {
+		options = parts[4]
+	}
 
 	return rules, model, layout, variant, options
 }

@@ -208,15 +208,17 @@ func TestDynamicXkbTripleLayoutAltGr(t *testing.T) {
 
 	// Create mock symbols for Keycode 59
 	syms := make([]uint32, 12)
-	syms[0], syms[1] = 0x2c, 0x3c    // Eng: comma, less
-	syms[2], syms[3] = 0x6c2, 0x6e2  // Rus: be, BE
+	syms[0], syms[1] = 0x2c, 0x3c     // Eng: comma, less
+	syms[2], syms[3] = 0x6c2, 0x6e2   // Rus: be, BE
 	syms[4], syms[5] = 0xab, 0x3c     // AltGr Eng: «, <
 	syms[6], syms[7] = 0xab, 0x3c     // AltGr Rus: «, <
-	syms[8], syms[9] = 0x63, 0x43    // G3: c, C
+	syms[8], syms[9] = 0x63, 0x43     // G3: c, C
 	syms[10], syms[11] = 0x100, 0x101 // AltGr G3: extra
 
 	xkbSyms := make([]xproto.Keysym, 12)
-	for i, s := range syms { xkbSyms[i] = xproto.Keysym(s) }
+	for i, s := range syms {
+		xkbSyms[i] = xproto.Keysym(s)
+	}
 
 	// Trigger keymap generation logic (internal part of reloadKeymap)
 	// We'll verify by compiling the string it generates.
@@ -241,7 +243,11 @@ func TestDynamicXkbTripleLayoutAltGr(t *testing.T) {
 			b.WriteString(fmt.Sprintf("    symbols[Group%d] = [ 0x%X, 0x%X, 0x%X, 0x%X ]",
 				g+1, uint32(xkbSyms[offset+base]), uint32(xkbSyms[offset+base+1]),
 				uint32(xkbSyms[offset+altIdx]), uint32(xkbSyms[offset+altIdx+1])))
-			if g < 3 { b.WriteString(",\n") } else { b.WriteString("\n") }
+			if g < 3 {
+				b.WriteString(",\n")
+			} else {
+				b.WriteString("\n")
+			}
 		}
 	}
 	b.WriteString("  };\n};\n};")
@@ -266,13 +272,15 @@ func TestDynamicXkbTripleLayoutAltGr_NoLegacyAltGr(t *testing.T) {
 
 	// Create mock symbols for Keycode 52 (z -> y/z swap on QWERTZ)
 	syms := make([]uint32, 12)
-	syms[0], syms[1] = 0x7a, 0x5a    // G1 Base: z, Z
-	syms[2], syms[3] = 0x6d1, 0x6f1  // G2 Base: ya, YA
-	syms[4], syms[5] = 0x79, 0x59    // G3 Base: y, Y (offset 4 due to compression)
-	syms[6], syms[7] = 0x100203a, 0  // G3 AltGr: › (offset 6 due to compression)
+	syms[0], syms[1] = 0x7a, 0x5a   // G1 Base: z, Z
+	syms[2], syms[3] = 0x6d1, 0x6f1 // G2 Base: ya, YA
+	syms[4], syms[5] = 0x79, 0x59   // G3 Base: y, Y (offset 4 due to compression)
+	syms[6], syms[7] = 0x100203a, 0 // G3 AltGr: › (offset 6 due to compression)
 
 	xkbSyms := make([]xproto.Keysym, 12)
-	for i, s := range syms { xkbSyms[i] = xproto.Keysym(s) }
+	for i, s := range syms {
+		xkbSyms[i] = xproto.Keysym(s)
+	}
 
 	var b strings.Builder
 	b.WriteString("xkb_keymap {\nxkb_keycodes { minimum=8; maximum=255; <I52>=52; };\n")
@@ -325,7 +333,11 @@ func TestDynamicXkbTripleLayoutAltGr_NoLegacyAltGr(t *testing.T) {
 				b.WriteString(fmt.Sprintf("    symbols[Group%d] = [ 0x%X, 0x%X ]",
 					g+1, uint32(xkbSyms[offset+base]), uint32(xkbSyms[offset+base+1])))
 			}
-			if g < 2 { b.WriteString(",\n") } else { b.WriteString("\n") }
+			if g < 2 {
+				b.WriteString(",\n")
+			} else {
+				b.WriteString("\n")
+			}
 		}
 	}
 	b.WriteString("  };\n};\n};")
@@ -455,7 +467,7 @@ func TestDynamicXkbKeypadNumLock(t *testing.T) {
 	}
 
 	// 2. NumLock ON (Mod2 active = 0x10)
-	state.UpdateMask(0, 0, 0x10, 0, 0, 0) // Mod2 locked/active
+	state.UpdateMask(0, 0, 0x10, 0, 0, 0)             // Mod2 locked/active
 	if sym := state.KeyGetOneSym(79); sym != 0xFFB7 { // KP_7 keysym
 		t.Errorf("NumLock ON: expected KP_7 (0xFFB7), got 0x%X", sym)
 	}

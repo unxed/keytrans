@@ -277,8 +277,8 @@ func (t *x11ximTranslator) TranslateX11(detail uint8, state uint16, isDown bool)
 	if t.conn != nil && t.xkbOpcode != 0 {
 		buf := make([]byte, 8)
 		buf[0] = t.xkbOpcode
-		buf[1] = 4            // XkbGetState
-		xgb.Put16(buf[2:], 2) // Length
+		buf[1] = 4                 // XkbGetState
+		xgb.Put16(buf[2:], 2)      // Length
 		xgb.Put16(buf[4:], 0x0100) // XkbUseCoreKbd
 
 		cookie := t.conn.NewCookie(true, true)
@@ -353,7 +353,8 @@ func (t *x11ximTranslator) TranslateWayland(keycode uint32, isDown bool) winkeys
 	return winkeys.InputEvent{} // XIM does not support Wayland
 }
 
-func (t *x11ximTranslator) UpdateWaylandModifiers(modsDepressed, modsLatched, modsLocked, group uint32) {}
+func (t *x11ximTranslator) UpdateWaylandModifiers(modsDepressed, modsLatched, modsLocked, group uint32) {
+}
 func (t *x11ximTranslator) Close() {
 	if t.ic != 0 {
 		purego.SyscallN(t.fnDestroyIC, t.ic)

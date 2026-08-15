@@ -13,7 +13,7 @@ func TestKeysymToVK(t *testing.T) {
 		wantVK uint16
 	}{
 		{0xff51, winkeys.VK_LEFT},
-		{0xff8d, winkeys.VK_RETURN},   // KP_Enter
+		{0xff8d, winkeys.VK_RETURN},  // KP_Enter
 		{0xffb5, winkeys.VK_NUMPAD5}, // KP_5
 		{0xffab, winkeys.VK_ADD},     // KP_Add
 		{0x0061, winkeys.VK_A},       // 'a'

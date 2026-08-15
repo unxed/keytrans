@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"time"
-    "unicode"
+	"unicode"
 
 	"github.com/jezek/xgb"
 	"github.com/jezek/xgb/xproto"
@@ -173,7 +173,7 @@ func (t *dynamicXkbTranslator) reloadKeymap() error {
 			hasAltGr bool
 		}
 		var groups []groupSymbols
-		
+
 		if symsPerKey >= 4 {
 			numGroups := 2
 			if symsPerKey > 8 {
@@ -251,8 +251,12 @@ func (t *dynamicXkbTranslator) reloadKeymap() error {
 			}
 		} else {
 			var gs groupSymbols
-			if length > 0 { gs.syms[0] = uint32(syms[offset+0]) }
-			if length > 1 { gs.syms[1] = uint32(syms[offset+1]) }
+			if length > 0 {
+				gs.syms[0] = uint32(syms[offset+0])
+			}
+			if length > 1 {
+				gs.syms[1] = uint32(syms[offset+1])
+			}
 			groups = append(groups, gs)
 		}
 
@@ -322,7 +326,7 @@ func (t *dynamicXkbTranslator) TranslateX11(detail uint8, state uint16, isDown b
 	// Periodic/forced reload to bypass macOS XQuartz MappingNotify bugs
 	if t.conn != nil {
 		now := time.Now()
-		if t.lastReload.IsZero() || now.Sub(t.lastReload) > 1 * time.Second {
+		if t.lastReload.IsZero() || now.Sub(t.lastReload) > 1*time.Second {
 			t.lastReload = now
 			t.reloadKeymap()
 		}
@@ -331,8 +335,8 @@ func (t *dynamicXkbTranslator) TranslateX11(detail uint8, state uint16, isDown b
 	if t.conn != nil && t.xkbOpcode != 0 {
 		buf := make([]byte, 8)
 		buf[0] = t.xkbOpcode
-		buf[1] = 4            // XkbGetState
-		xgb.Put16(buf[2:], 2) // Length
+		buf[1] = 4                 // XkbGetState
+		xgb.Put16(buf[2:], 2)      // Length
 		xgb.Put16(buf[4:], 0x0100) // XkbUseCoreKbd
 
 		cookie := t.conn.NewCookie(true, true)
@@ -378,7 +382,8 @@ func (t *dynamicXkbTranslator) TranslateWayland(keycode uint32, isDown bool) win
 	return winkeys.InputEvent{}
 }
 
-func (t *dynamicXkbTranslator) UpdateWaylandModifiers(modsDepressed, modsLatched, modsLocked, group uint32) {}
+func (t *dynamicXkbTranslator) UpdateWaylandModifiers(modsDepressed, modsLatched, modsLocked, group uint32) {
+}
 func (t *dynamicXkbTranslator) Close() {}
 
 func symToStr(sym uint32) string {
@@ -406,4 +411,3 @@ func containsNonAlphanumeric(s string) bool {
 	}
 	return false
 }
-

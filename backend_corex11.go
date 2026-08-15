@@ -1,8 +1,8 @@
 package keytrans
 
 import (
-	"unicode"
 	"time"
+	"unicode"
 
 	"github.com/jezek/xgb"
 	"github.com/jezek/xgb/xproto"
@@ -66,8 +66,12 @@ func (t *coreX11Translator) updateMasks() {
 		}
 	}
 
-	if t.numLockMask == 0 { t.numLockMask = 1 << 4 }
-	if t.altGrMask == 0 { t.altGrMask = 1 << 7 }
+	if t.numLockMask == 0 {
+		t.numLockMask = 1 << 4
+	}
+	if t.altGrMask == 0 {
+		t.altGrMask = 1 << 7
+	}
 }
 
 func newCoreX11Translator(info OSInfo) Translator {
@@ -120,7 +124,7 @@ func (t *coreX11Translator) TranslateX11(detail uint8, state uint16, isDown bool
 	// Periodic/forced reload to bypass macOS XQuartz MappingNotify bugs (only if connection is available)
 	if t.conn != nil {
 		now := time.Now()
-		if t.lastReload.IsZero() || now.Sub(t.lastReload) > 1 * time.Second {
+		if t.lastReload.IsZero() || now.Sub(t.lastReload) > 1*time.Second {
 			t.lastReload = now
 			setup := xproto.Setup(t.conn)
 			if min, max, symsPerKey, syms, err := loadCoreKeymapData(t.conn, setup); err == nil {
@@ -140,8 +144,8 @@ func (t *coreX11Translator) TranslateX11(detail uint8, state uint16, isDown bool
 	if t.conn != nil && t.xkbOpcode != 0 {
 		buf := make([]byte, 8)
 		buf[0] = t.xkbOpcode
-		buf[1] = 4            // XkbGetState
-		xgb.Put16(buf[2:], 2) // Length
+		buf[1] = 4                 // XkbGetState
+		xgb.Put16(buf[2:], 2)      // Length
 		xgb.Put16(buf[4:], 0x0100) // XkbUseCoreKbd
 
 		cookie := t.conn.NewCookie(true, true)
@@ -185,7 +189,8 @@ func (t *coreX11Translator) TranslateWayland(keycode uint32, isDown bool) winkey
 	return winkeys.InputEvent{} // Not supported by this backend
 }
 
-func (t *coreX11Translator) UpdateWaylandModifiers(modsDepressed, modsLatched, modsLocked, group uint32) {}
+func (t *coreX11Translator) UpdateWaylandModifiers(modsDepressed, modsLatched, modsLocked, group uint32) {
+}
 func (t *coreX11Translator) Close() {}
 
 func (t *coreX11Translator) lookup(kc int, state uint16, group int) uint32 {
@@ -206,7 +211,7 @@ func (t *coreX11Translator) lookup(kc int, state uint16, group int) uint32 {
 		return 0
 	}
 
-	shift := (state & 1) != 0 // ShiftMask = 1
+	shift := (state & 1) != 0    // ShiftMask = 1
 	capsLock := (state & 2) != 0 // LockMask = 2
 	numLock := (state & t.numLockMask) != 0
 	modeSwitch := (state & t.modeSwitchMask) != 0
@@ -418,4 +423,3 @@ func isBaseLayoutLetter(sym uint32) bool {
 	}
 	return isNonLatinLetterKeysym(sym)
 }
-

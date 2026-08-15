@@ -126,8 +126,8 @@ func (t *pureXKBTranslator) TranslateX11(detail uint8, state uint16, isDown bool
 	if t.conn != nil {
 		buf := make([]byte, 8)
 		buf[0] = t.xkbOpcode
-		buf[1] = 4            // XkbGetState
-		xgb.Put16(buf[2:], 2) // Length
+		buf[1] = 4                 // XkbGetState
+		xgb.Put16(buf[2:], 2)      // Length
 		xgb.Put16(buf[4:], 0x0100) // XkbUseCoreKbd
 
 		cookie := t.conn.NewCookie(true, true)
@@ -198,11 +198,21 @@ func getXKBRulesNames(conn *xgb.Conn) (string, string, string, string, string) {
 	}
 
 	var rules, model, layout, variant, options string
-	if len(parts) >= 1 { rules = parts[0] }
-	if len(parts) >= 2 { model = parts[1] }
-	if len(parts) >= 3 { layout = parts[2] }
-	if len(parts) >= 4 { variant = parts[3] }
-	if len(parts) >= 5 { options = parts[4] }
+	if len(parts) >= 1 {
+		rules = parts[0]
+	}
+	if len(parts) >= 2 {
+		model = parts[1]
+	}
+	if len(parts) >= 3 {
+		layout = parts[2]
+	}
+	if len(parts) >= 4 {
+		variant = parts[3]
+	}
+	if len(parts) >= 5 {
+		options = parts[4]
+	}
 
 	return rules, model, layout, variant, options
 }

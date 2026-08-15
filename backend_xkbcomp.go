@@ -3,11 +3,11 @@ package keytrans
 import (
 	"bytes"
 	"context"
+	"os"
 	"os/exec"
 	"regexp"
+	"runtime"
 	"strings"
-    "os"
-    "runtime"
 
 	"github.com/jezek/xgb"
 	"github.com/jezek/xgb/xproto"
@@ -129,8 +129,8 @@ func (t *xkbcompTranslator) TranslateX11(detail uint8, state uint16, isDown bool
 	if t.conn != nil {
 		buf := make([]byte, 8)
 		buf[0] = t.xkbOpcode
-		buf[1] = 4            // XkbGetState
-		xgb.Put16(buf[2:], 2) // Length
+		buf[1] = 4                 // XkbGetState
+		xgb.Put16(buf[2:], 2)      // Length
 		xgb.Put16(buf[4:], 0x0100) // XkbUseCoreKbd
 
 		cookie := t.conn.NewCookie(true, true)
