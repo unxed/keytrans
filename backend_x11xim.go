@@ -39,8 +39,7 @@ type x11ximTranslator struct {
 	fnPending            uintptr
 	fnNextEvent          uintptr
 	fnLookupString       uintptr
-	xCreateIC            func(_ purego.Variadic, im uintptr, args ...any) uintptr
-	xGetIMValues         func(_ purego.Variadic, im uintptr, args ...any) uintptr
+	fnGetIMValues        uintptr
 }
 
 type xKeyEvent struct {
@@ -200,8 +199,11 @@ func newX11XIMTranslator(info OSInfo) Translator {
 	// 3. Query supported input styles for diagnostics
 	var stylesPtr uintptr
 	nStyles := []byte("queryInputStyle\x00")
-	if t.xGetIMValues != nil {
-		t.xGetIMValues(purego.Variadic{}, im, uintptr(unsafe.Pointer(&nStyles[0])), uintptr(unsafe.Pointer(&stylesPtr)), uintptr(0))
+	if t.fnGetIMValues != 0 {
+		callCVariadic(t.fnGetIMValues, im,
+			uintptr(unsafe.Pointer(&nStyles[0])), uintptr(unsafe.Pointer(&stylesPtr)),
+			uintptr(0),
+		)
 	}
 
 	bestStyle := uintptr(0x0010 | 0x0400) // XIMPreeditNothing | XIMStatusNothing
@@ -232,8 +234,8 @@ func newX11XIMTranslator(info OSInfo) Translator {
 	nFocusWindow := []byte("focusWindow\x00")
 
 	var ic uintptr
-	if t.xCreateIC != nil {
-		ic = t.xCreateIC(purego.Variadic{}, t.im,
+	if t.fnCreateIC != 0 {
+		ic = callCVariadic(t.fnCreateIC, t.im,
 			uintptr(unsafe.Pointer(&nInputStyle[0])), bestStyle,
 			uintptr(unsafe.Pointer(&nClientWindow[0])), uintptr(info.WindowID),
 			uintptr(unsafe.Pointer(&nFocusWindow[0])), uintptr(info.WindowID),
@@ -383,9 +385,6 @@ func (t *x11ximTranslator) resolveSymbols() error {
 	t.fnOpenIM = resolve("XOpenIM")
 	t.fnCloseIM = resolve("XCloseIM")
 	t.fnCreateIC = resolve("XCreateIC")
-	if t.fnCreateIC != 0 {
-		purego.RegisterFunc(&t.xCreateIC, t.fnCreateIC)
-	}
 	t.fnDestroyIC = resolve("XDestroyIC")
 	t.fnSetLocaleModifiers = resolve("XSetLocaleModifiers")
 	t.xutf8LookupStringPtr = resolve("Xutf8LookupString")
@@ -393,10 +392,7 @@ func (t *x11ximTranslator) resolveSymbols() error {
 	t.fnNextEvent = resolve("XNextEvent")
 	t.fnLookupString = resolve("XLookupString")
 
-	fnGetIMValues := resolve("XGetIMValues")
-	if fnGetIMValues != 0 {
-		purego.RegisterFunc(&t.xGetIMValues, fnGetIMValues)
-	}
+	t.fnGetIMValues = resolve("XGetIMValues")
 
 	return err
 }

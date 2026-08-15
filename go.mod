@@ -8,7 +8,3 @@ require (
 	github.com/unxed/winkeys v0.1.0
 	github.com/unxed/xkb-go v0.1.8
 )
-
-require github.com/go-webgpu/goffi v0.6.2 // indirect
-
-replace github.com/ebitengine/purego => github.com/unxed/pureffi v0.1.12

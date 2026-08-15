@@ -165,6 +165,26 @@ go build -tags noffi .
 
 This will strip out the `libxkbcommon` and `libX11` backends, compiling only the pure Go implementations.
 
+### `pureffi` (optional)
+
+By default `keytrans` builds against **vanilla [ebitengine/purego](https://github.com/ebitengine/purego)** and uses nothing beyond its public API. No `replace` directive, no libffi, no `goffi` dependency.
+
+The only place this matters is the XIM backend, which has to call the C *variadic* functions `XCreateIC` and `XGetIMValues`. These are handled in `variadic_syscall.go` on top of plain `purego.SyscallN`, including the Apple `arm64` variadic ABI quirk (see [purego#446](https://github.com/ebitengine/purego/issues/446)) — no assembly and no CGO required.
+
+If you prefer to route those calls through libffi instead, use [pureffi](https://github.com/unxed/pureffi) and the `pureffi` build tag. Add to the `go.mod` of **your own** module (a `replace` in a dependency is ignored by the main module):
+
+```
+replace github.com/ebitengine/purego => github.com/unxed/pureffi v0.1.12
+```
+
+and build with:
+
+```bash
+go build -tags pureffi .
+```
+
+Both modes are functionally equivalent; the default is recommended.
+
 ## Compatibility
 
 Important note for developers and AI models: We cannot rely on group information in X11 events, as some X servers always report 0. Additionally, we cannot rely on the Mod5 value in X11 events, because certain X servers set this flag for any group other than 0, regardless of whether AltGr is pressed. Please ensure all future development takes these factors into consideration.
