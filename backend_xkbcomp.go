@@ -172,7 +172,7 @@ func (t *xkbcompTranslator) TranslateX11(detail uint8, state uint16, isDown bool
 		VirtualKeyCode:  vk,
 		Char:            char,
 		KeyDown:         isDown,
-		ControlKeyState: translateModifiers(state),
+		ControlKeyState: translateModifiers(state) | enhancedKeyForKeysym(uint32(sym)),
 		InputSource:     "xkbcomp",
 		RepeatCount:     1,
 	}

@@ -343,7 +343,7 @@ func (t *x11ximTranslator) TranslateX11(detail uint8, state uint16, isDown bool)
 		VirtualKeyCode:  vk,
 		Char:            char,
 		KeyDown:         isDown,
-		ControlKeyState: translateModifiers(state),
+		ControlKeyState: translateModifiers(state) | enhancedKeyForKeysym(uint32(keysym)),
 		InputSource:     "libX11-XIM",
 		RepeatCount:     1,
 	}

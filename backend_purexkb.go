@@ -113,11 +113,12 @@ func (t *pureXKBTranslator) translateKeysym(detail uint8, isDown bool) winkeys.I
 	}
 
 	return winkeys.InputEvent{
-		Type:           winkeys.KeyEventType,
-		VirtualKeyCode: vk,
-		Char:           char,
-		KeyDown:        isDown,
-		RepeatCount:    1,
+		Type:            winkeys.KeyEventType,
+		VirtualKeyCode:  vk,
+		Char:            char,
+		KeyDown:         isDown,
+		ControlKeyState: enhancedKeyForKeysym(uint32(sym)),
+		RepeatCount:     1,
 	}
 }
 
@@ -150,7 +151,7 @@ func (t *pureXKBTranslator) TranslateX11(detail uint8, state uint16, isDown bool
 	}
 
 	event := t.translateKeysym(detail, isDown)
-	event.ControlKeyState = translateModifiers(state)
+	event.ControlKeyState |= translateModifiers(state)
 	event.InputSource = "purexkb"
 	return event
 }
