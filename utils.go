@@ -31,6 +31,30 @@ func translateModifiers(state uint16) winkeys.ControlKeyState {
 	return mods
 }
 
+// enhancedKeyForKeysym preserves the distinction between the physical
+// navigation cluster and the numeric keypad. X11 and XKB expose that
+// distinction in the keysym: XK_Delete/XK_Insert are the enhanced keys while
+// XK_KP_Delete/XK_KP_Insert are their keypad counterparts. Keep the flag
+// attached to the translated event so every X11 and Wayland translator uses
+// the same rule.
+func enhancedKeyForKeysym(keysym uint32) winkeys.ControlKeyState {
+	switch keysym {
+	case 0xff50, // XK_Home
+		0xff51, // XK_Left
+		0xff52, // XK_Up
+		0xff53, // XK_Right
+		0xff54, // XK_Down
+		0xff55, // XK_Prior
+		0xff56, // XK_Next
+		0xff57, // XK_End
+		0xff63, // XK_Insert
+		0xffff: // XK_Delete
+		return winkeys.EnhancedKey
+	default:
+		return 0
+	}
+}
+
 var usKeymapState *xkb.State
 
 func init() {

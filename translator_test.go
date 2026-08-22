@@ -50,6 +50,31 @@ func TestTranslateModifiers(t *testing.T) {
 	}
 }
 
+func TestEnhancedKeyForKeysym(t *testing.T) {
+	tests := []struct {
+		name   string
+		keysym uint32
+		want   winkeys.ControlKeyState
+	}{
+		{"navigation delete", 0xffff, winkeys.EnhancedKey},
+		{"navigation insert", 0xff63, winkeys.EnhancedKey},
+		{"navigation home", 0xff50, winkeys.EnhancedKey},
+		{"navigation page down", 0xff56, winkeys.EnhancedKey},
+		{"keypad delete", 0xff9f, 0},
+		{"keypad insert", 0xff9e, 0},
+		{"keypad home", 0xff95, 0},
+		{"keypad page down", 0xff9b, 0},
+		{"printable key", 'x', 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := enhancedKeyForKeysym(tt.keysym); got != tt.want {
+				t.Errorf("enhancedKeyForKeysym(0x%x) = %v, want %v", tt.keysym, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNewX11Translator_Fallback(t *testing.T) {
 	// If no valid connection is passed, the factory must safely return nil without panicking.
 	info := OSInfo{
