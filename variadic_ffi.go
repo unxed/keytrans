@@ -1,4 +1,4 @@
-//go:build pureffi && !noffi && (linux || darwin || freebsd) && !arm
+//go:build pureffi && !noffi && (linux || darwin || freebsd) && (amd64 || arm64)
 
 package keytrans
 

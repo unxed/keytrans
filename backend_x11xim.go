@@ -1,4 +1,4 @@
-//go:build !noffi && (linux || darwin || freebsd) && !arm
+//go:build !noffi && (linux || darwin || freebsd) && (amd64 || arm64)
 
 package keytrans
 
