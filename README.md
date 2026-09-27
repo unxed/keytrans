@@ -17,31 +17,49 @@ When initializing an X11 translator, `keytrans` attempts the following backends 
 
 ```
 ┌──────────────────────────────────────────────┐
-│ 1. libxkbcommon (FFI)                        │ -> Best. Native multi-layout, uses xkbcommon.
+│ 1. xkbgo-x11 (Pure Go)                       │ -> Reads the real device keymap over the raw XKB wire protocol.
+└──────────────────────┬───────────────────────┘
+                       ▼ (fails, e.g. XKEYBOARD extension missing)
+┌──────────────────────────────────────────────┐
+│ 2. libxkbcommon (FFI)                        │ -> Native multi-layout, uses xkbcommon.
 └──────────────────────┬───────────────────────┘
                        ▼ (fails or -tags noffi)
 ┌──────────────────────────────────────────────┐
-│ 2. libX11 XIM (FFI)                          │ -> Native X11 input method (Xutf8LookupString).
+│ 3. libX11 XIM (FFI)                          │ -> Native X11 input method (Xutf8LookupString).
 └──────────────────────┬───────────────────────┘
                        ▼ (fails or -tags noffi)
 ┌──────────────────────────────────────────────┐
-│ 3. purexkb (Pure Go)                         │ -> Resolves layout rules from the X server and compiles via xkb-go.
+│ 4. purexkb (Pure Go)                         │ -> Resolves layout rules from the X server and compiles via xkb-go.
 └──────────────────────┬───────────────────────┘
                        ▼ (fails or xkeyboard-config missing)
 ┌──────────────────────────────────────────────┐
-│ 4. dynamicxkb (Pure Go)                      │ -> Reconstructs XKB keymap dynamically in Go memory.
+│ 5. dynamicxkb (Pure Go)                      │ -> Reconstructs XKB keymap dynamically in Go memory.
 └──────────────────────┬───────────────────────┘
                        ▼ (fails or error)
 ┌──────────────────────────────────────────────┐
-│ 5. xkbcomp (Pure Go)                         │ -> Runs `xkbcomp $DISPLAY` and parses map with xkb-go.
+│ 6. xkbcomp (Pure Go)                         │ -> Runs `xkbcomp $DISPLAY` and parses map with xkb-go.
 └──────────────────────┬───────────────────────┘
                        ▼ (fails or xkbcomp missing)
 ┌──────────────────────────────────────────────┐
-│ 6. Core X11 Heuristics (Pure Go)             │ -> Reverse-engineers ModMap & keypad.
+│ 7. Core X11 Heuristics (Pure Go)             │ -> Reverse-engineers ModMap & keypad.
 └──────────────────────────────────────────────┘
 ```
 
-If the system has no dynamic loading capabilities or if compiled with `-tags noffi`, `keytrans` gracefully falls back to purely Go-based parsing (`dynamicxkb`, `xkbcomp` or `corex11` heuristics), keeping compilation 100% clean and portable.
+`xkbgo-x11` is tried first: it speaks the XKB (XKEYBOARD) wire protocol
+directly to the X server via
+[`github.com/unxed/xkb-go/x11`](https://github.com/unxed/xkb-go/tree/main/x11)'s
+`NewKeymapFromX11Device`, which issues the same `GetMap`/`GetNames`/`GetControls`
+requests that libxkbcommon's `xkb_x11_keymap_new_from_device` uses internally.
+This needs no CGO, no FFI, and no `xkbcomp` binary, and it reads the keymap
+the X server actually resolved for the requested input device — unlike
+`purexkb`, which only reads the `_XKB_RULES_NAMES` RMLVO property and
+recompiles an approximation of the layout from `xkeyboard-config`. It reuses
+the `*xgb.Conn` you already passed in via `OSInfo.XgbConn`; `keytrans` never
+opens a second X11 connection. If the X server has no XKEYBOARD extension
+(rare, but possible on minimal/embedded X servers) or the protocol exchange
+otherwise fails, `keytrans` moves on to the next backend in the chain.
+
+If the system has no dynamic loading capabilities or if compiled with `-tags noffi`, `keytrans` gracefully falls back to purely Go-based parsing (`xkbgo-x11`, `dynamicxkb`, `xkbcomp` or `corex11` heuristics), keeping compilation 100% clean and portable.
 
 ## Manual Backend Selection
 
@@ -58,6 +76,7 @@ info := keytrans.OSInfo{
 ```
 
 Supported backend strings:
+*   `"xkbgo-x11"` (pure Go, reads the real keymap over the XKB wire protocol)
 *   `"libxkbcommon"` (requires `libxkbcommon.so.0` and FFI support)
 *   `"libX11-XIM"` (requires `libX11.so.6` and FFI support)
 *   `"purexkb"` (requires `xkeyboard-config`)
