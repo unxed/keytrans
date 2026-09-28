@@ -488,6 +488,157 @@ func TestCoreX11TranslateX11_ModifierKeys(t *testing.T) {
 	}
 }
 
+func TestCoreX11Lookup_ThreeGroups(t *testing.T) {
+	// keytrans#2: Core X11 heuristics used to break down once more than two
+	// keyboard groups (layouts) were configured, e.g. English + Russian +
+	// French. With numGroups == 3 (as reported by XkbGetControls) and
+	// symsPerKey == 6, each group occupies its own consecutive 2-symbol
+	// block: [G0 base, G0 shift, G1 base, G1 shift, G2 base, G2 shift].
+	syms := []xproto.Keysym{
+		0x61,   // G0 Level0: 'a'
+		0x41,   // G0 Level1: 'A'
+		0x06c1, // G1 Level0: Cyrillic_a
+		0x06e1, // G1 Level1: Cyrillic_A
+		0x7a,   // G2 Level0: 'z'
+		0x5a,   // G2 Level1: 'Z'
+	}
+
+	trans := &coreX11Translator{
+		minKeycode: 8,
+		maxKeycode: 100,
+		symsPerKey: len(syms),
+		syms:       syms,
+		numGroups:  3,
+	}
+
+	tests := []struct {
+		name  string
+		state uint16
+		group int
+		want  uint32
+	}{
+		{"Group 0 Base", 0, 0, 0x61},
+		{"Group 0 Shift", 1, 0, 0x41},
+		{"Group 1 Base (Cyrillic)", 0, 1, 0x06c1},
+		{"Group 1 Shift (Cyrillic)", 1, 1, 0x06e1},
+		{"Group 2 Base", 0, 2, 0x7a},
+		{"Group 2 Shift", 1, 2, 0x5a},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := trans.lookup(8, tt.state, tt.group)
+			if got != tt.want {
+				t.Errorf("lookup(state=0x%x, group=%d) = 0x%x, want 0x%x", tt.state, tt.group, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCoreX11Lookup_ThreeGroupsWithAltGr(t *testing.T) {
+	// Same three-group scenario as above, but each group also carries an
+	// AltGr (third/fourth level) pair, so symsPerKey == 12 and each
+	// group's block is 4 symbols wide: [base, shift, altgr, altgr+shift].
+	syms := []xproto.Keysym{
+		0x61, 0x41, 0x20ac, 0x00a2, // G0: a A € ¢
+		0x06c1, 0x06e1, 0, 0, // G1: Cyrillic_a Cyrillic_A - -
+		0x7a, 0x5a, 0, 0, // G2: z Z - -
+	}
+
+	trans := &coreX11Translator{
+		minKeycode: 8,
+		maxKeycode: 100,
+		symsPerKey: len(syms),
+		syms:       syms,
+		numGroups:  3,
+		altGrMask:  0x80,
+	}
+
+	tests := []struct {
+		name  string
+		state uint16
+		group int
+		want  uint32
+	}{
+		{"Group 0 Base", 0, 0, 0x61},
+		{"Group 0 AltGr", 0x80, 0, 0x20ac},
+		{"Group 1 Base (Cyrillic)", 0, 1, 0x06c1},
+		{"Group 1 AltGr (falls back to base, empty slot)", 0x80, 1, 0x06c1},
+		{"Group 2 Base", 0, 2, 0x7a},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := trans.lookup(8, tt.state, tt.group)
+			if got != tt.want {
+				t.Errorf("lookup(state=0x%x, group=%d) = 0x%x, want 0x%x", tt.state, tt.group, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCoreX11Lookup_FourGroups(t *testing.T) {
+	// A fourth simultaneous layout (e.g. English + Russian + French +
+	// German) must resolve just as correctly as the third: numGroups == 4,
+	// symsPerKey == 8, width == 2 per group.
+	syms := []xproto.Keysym{
+		0x61, 0x41, // G0: a A
+		0x06c1, 0x06e1, // G1: Cyrillic_a Cyrillic_A
+		0x7a, 0x5a, // G2: z Z
+		0x71, 0x51, // G3: q Q
+	}
+
+	trans := &coreX11Translator{
+		minKeycode: 8,
+		maxKeycode: 100,
+		symsPerKey: len(syms),
+		syms:       syms,
+		numGroups:  4,
+	}
+
+	tests := []struct {
+		name  string
+		group int
+		want  uint32
+	}{
+		{"Group 0", 0, 0x61},
+		{"Group 1 (Cyrillic)", 1, 0x06c1},
+		{"Group 2", 2, 0x7a},
+		{"Group 3", 3, 0x71},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := trans.lookup(8, 0, tt.group)
+			if got != tt.want {
+				t.Errorf("lookup(group=%d) = 0x%x, want 0x%x", tt.group, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCoreX11Lookup_ThreeGroupsMismatchedWidthFallsBack(t *testing.T) {
+	// If the server-reported numGroups does not evenly divide symsPerKey
+	// (a malformed or unexpected reply), lookup() must not guess a bogus
+	// width: it falls back to the pre-existing two-group heuristics rather
+	// than indexing out of the intended block.
+	syms := []xproto.Keysym{0x61, 0x41, 0x06c1, 0x06e1, 0x7a} // length 5, not divisible by 3
+
+	trans := &coreX11Translator{
+		minKeycode: 8,
+		maxKeycode: 100,
+		symsPerKey: len(syms),
+		syms:       syms,
+		numGroups:  3,
+	}
+
+	// Must not panic; group 0 base should still resolve to the first symbol.
+	got := trans.lookup(8, 0, 0)
+	if got != 0x61 {
+		t.Errorf("lookup(group=0) = 0x%x, want 0x61", got)
+	}
+}
+
 func TestCoreX11TranslateX11_PositionalVKFallback_GroupBased(t *testing.T) {
 	syms := make([]xproto.Keysym, 512)
 	offset := (54 - 8) * 4

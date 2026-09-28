@@ -22,6 +22,43 @@ type coreX11Translator struct {
 	altGrMask      uint16
 	xkbOpcode      byte
 	lastReload     time.Time
+	// numGroups is the number of keyboard groups (layouts) the X server
+	// currently has configured, as reported by the XKEYBOARD extension's
+	// GetControls request (see queryXKBNumGroups). It defaults to 2, the
+	// classic Core X11 assumption, when the extension is unavailable or
+	// the query fails, so lookup() falls back to the historical two-group
+	// heuristics below unchanged.
+	numGroups int
+}
+
+// queryXKBNumGroups asks the X server, via the XKEYBOARD extension's
+// GetControls request, how many keyboard groups (layouts) are currently
+// configured (1-4, per the XKB protocol). It returns ok=false if the
+// extension is unavailable or the request fails, in which case callers
+// should keep assuming the classic two-group Core X11 layout.
+func queryXKBNumGroups(conn *xgb.Conn, xkbOpcode byte) (numGroups int, ok bool) {
+	if conn == nil || xkbOpcode == 0 {
+		return 0, false
+	}
+
+	buf := make([]byte, 8)
+	buf[0] = xkbOpcode
+	buf[1] = 6                 // XkbGetControls
+	xgb.Put16(buf[2:], 2)      // Length
+	xgb.Put16(buf[4:], 0x0100) // XkbUseCoreKbd
+
+	cookie := conn.NewCookie(true, true)
+	conn.NewRequest(buf, cookie)
+	reply, err := cookie.Reply()
+	if err != nil {
+		return 0, false
+	}
+
+	controls, err := xkb.ParseX11GetControlsReply(reply)
+	if err != nil {
+		return 0, false
+	}
+	return controls.NumGroups, true
 }
 
 func loadCoreKeymapData(conn *xgb.Conn, setup *xproto.SetupInfo) (min int, max int, symsPerKey int, syms []xproto.Keysym, err error) {
@@ -102,6 +139,11 @@ func newCoreX11Translator(info OSInfo) Translator {
 		_, _ = cookie.Reply()
 	}
 
+	numGroups := 2
+	if n, ok := queryXKBNumGroups(conn, xkbOpcode); ok {
+		numGroups = n
+	}
+
 	t := &coreX11Translator{
 		conn:       conn,
 		minKeycode: min,
@@ -109,6 +151,7 @@ func newCoreX11Translator(info OSInfo) Translator {
 		symsPerKey: symsPerKey,
 		syms:       syms,
 		xkbOpcode:  xkbOpcode,
+		numGroups:  numGroups,
 	}
 
 	t.updateMasks()
@@ -133,6 +176,12 @@ func (t *coreX11Translator) TranslateX11(detail uint8, state uint16, isDown bool
 				t.symsPerKey = symsPerKey
 				t.syms = syms
 				t.updateMasks()
+			}
+			// Re-check how many groups are configured: the user may have
+			// added or removed layouts (e.g. via setxkbmap) since the
+			// translator was created, without restarting the process.
+			if n, ok := queryXKBNumGroups(t.conn, t.xkbOpcode); ok {
+				t.numGroups = n
 			}
 		}
 	}
@@ -226,30 +275,52 @@ func (t *coreX11Translator) lookup(kc int, state uint16, group int) uint32 {
 	altIdx := 0
 	g := effectiveGroup
 
-	hasLegacyAltGr := true
-	if length >= 8 {
-		sym0 := uint32(syms[0])
-		sym4 := uint32(syms[4])
-		if sym4 != 0 && sym4 != sym0 && isBaseLayoutLetter(sym4) && isBaseLayoutLetter(sym0) {
-			hasLegacyAltGr = false
+	if t.numGroups >= 3 && t.symsPerKey > 0 && t.symsPerKey%t.numGroups == 0 {
+		// Three or more keyboard groups (layouts) are configured (verified
+		// against the server via GetControls, see queryXKBNumGroups). The
+		// Core X11 protocol compatibility mapping the server derives from
+		// XKB in this case lays each group out as its own consecutive,
+		// equally sized block of `width` symbols
+		// (width = symsPerKeycode / numGroups): [G0L0, G0L1, ..., G1L0,
+		// G1L1, ...]. This is a different, uniform layout from the
+		// historical two-group(+AltGr) interleaving below, which was only
+		// ever designed for exactly two groups and silently produced wrong
+		// offsets for a third or fourth group. See keytrans issue #2.
+		width := t.symsPerKey / t.numGroups
+		gg := g % t.numGroups
+		if gg < 0 {
+			gg += t.numGroups
 		}
-	}
-
-	if hasLegacyAltGr {
-		if g < 2 {
-			baseIdx = g * 2
-			altIdx = baseIdx + 4
-		} else {
-			baseIdx = 8 + (g-2)*4
+		baseIdx = gg * width
+		if width >= 3 {
 			altIdx = baseIdx + 2
 		}
 	} else {
-		if g < 2 {
-			baseIdx = g * 2
-			altIdx = 0
+		hasLegacyAltGr := true
+		if length >= 8 {
+			sym0 := uint32(syms[0])
+			sym4 := uint32(syms[4])
+			if sym4 != 0 && sym4 != sym0 && isBaseLayoutLetter(sym4) && isBaseLayoutLetter(sym0) {
+				hasLegacyAltGr = false
+			}
+		}
+
+		if hasLegacyAltGr {
+			if g < 2 {
+				baseIdx = g * 2
+				altIdx = baseIdx + 4
+			} else {
+				baseIdx = 8 + (g-2)*4
+				altIdx = baseIdx + 2
+			}
 		} else {
-			baseIdx = 4 + (g-2)*4
-			altIdx = baseIdx + 2
+			if g < 2 {
+				baseIdx = g * 2
+				altIdx = 0
+			} else {
+				baseIdx = 4 + (g-2)*4
+				altIdx = baseIdx + 2
+			}
 		}
 	}
 
