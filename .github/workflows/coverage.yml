@@ -28,3 +28,28 @@ jobs:
           path: |
             coverage.out
             coverage.txt
+      - name: Cross-compile and vet for darwin/arm64 (Apple Silicon)
+        env:
+          GOOS: darwin
+          GOARCH: arm64
+        run: |
+          go build ./...
+          # purego FFI backends convert uintptr<->unsafe.Pointer by design (unsafeptr check is a false positive here)
+          go vet -unsafeptr=false ./...
+
+  arm64:
+    # Native arm64 run, distinct from the darwin/arm64 cross-compile above:
+    # this exercises the AAPCS64 (non-Apple) variadic path for real, on
+    # actual arm64 hardware, instead of only cross-compiling it.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: true
+      - name: Build and test on native arm64
+        run: |
+          go build ./...
+          go test ./...
