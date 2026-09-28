@@ -34,7 +34,8 @@ jobs:
           GOARCH: arm64
         run: |
           go build ./...
-          go vet ./...
+          # purego FFI backends convert uintptr<->unsafe.Pointer by design (unsafeptr check is a false positive here)
+          go vet -unsafeptr=false ./...
 
   arm64:
     # Native arm64 run, distinct from the darwin/arm64 cross-compile above:
