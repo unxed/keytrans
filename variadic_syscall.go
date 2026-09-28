@@ -45,18 +45,44 @@ import (
 // bound so the same code works on both.
 const maxSyscallArgs = 15
 
-// variadicRegPad is the number of dummy register arguments that must follow
-// the fixed parameter so that the variadic tail is spilled onto the stack.
-//
-// Computed at runtime rather than via build tags so that this single file
-// covers every supported target.
-var variadicRegPad = func() int {
-	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
+// variadicRegPadFor returns the number of dummy register arguments that must
+// follow the fixed parameter on the given target so that the variadic tail
+// is spilled onto the stack. It is a pure function of GOOS/GOARCH so the
+// arm64 Apple-Silicon case can be unit-tested on any host, including hosts
+// that are neither darwin nor arm64.
+func variadicRegPadFor(goos, goarch string) int {
+	if goos == "darwin" && goarch == "arm64" {
 		// x0 holds the single fixed parameter, x1..x7 get padded out.
 		return 7
 	}
 	return 0
-}()
+}
+
+// variadicRegPad is variadicRegPadFor for the running target.
+//
+// Computed at runtime rather than via build tags so that this single file
+// covers every supported target.
+var variadicRegPad = variadicRegPadFor(runtime.GOOS, runtime.GOARCH)
+
+// buildVariadicArgs assembles the argument list passed to purego.SyscallN
+// for a call of the form `ret fn(fixed, ...)`: the fixed parameter, then
+// regPad dummy zero registers, then the real variadic arguments. It reports
+// ok=false when the resulting argument count would exceed maxSyscallArgs,
+// mirroring purego's own limit instead of letting it panic.
+func buildVariadicArgs(regPad int, fixed uintptr, varargs []uintptr) (args []uintptr, ok bool) {
+	total := 1 + regPad + len(varargs)
+	if total > maxSyscallArgs {
+		return nil, false
+	}
+
+	args = make([]uintptr, 0, total)
+	args = append(args, fixed)
+	for i := 0; i < regPad; i++ {
+		args = append(args, 0)
+	}
+	args = append(args, varargs...)
+	return args, true
+}
 
 // callCVariadic calls a C function of the form `ret fn(fixed, ...)`, passing
 // varargs as the variadic tail. It returns the first return register.
@@ -71,8 +97,8 @@ func callCVariadic(fn uintptr, fixed uintptr, varargs ...uintptr) uintptr {
 		return 0
 	}
 
-	total := 1 + variadicRegPad + len(varargs)
-	if total > maxSyscallArgs {
+	args, ok := buildVariadicArgs(variadicRegPad, fixed, varargs)
+	if !ok {
 		// Only reachable on darwin/arm64 with a very long argument list.
 		// Bail out instead of letting purego panic; the caller treats a
 		// zero result as "backend unavailable" and falls back.
@@ -80,13 +106,6 @@ func callCVariadic(fn uintptr, fixed uintptr, varargs ...uintptr) uintptr {
 			"args", len(varargs), "limit", maxSyscallArgs-1-variadicRegPad)
 		return 0
 	}
-
-	args := make([]uintptr, 0, total)
-	args = append(args, fixed)
-	for i := 0; i < variadicRegPad; i++ {
-		args = append(args, 0)
-	}
-	args = append(args, varargs...)
 
 	r1, _, _ := purego.SyscallN(fn, args...)
 	return r1
