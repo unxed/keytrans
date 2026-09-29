@@ -3,6 +3,8 @@ package keytrans
 import (
 	"log/slog"
 	"os"
+
+	"github.com/jezek/xgb"
 )
 
 // NewX11Translator attempts to initialize the best available X11 keyboard translator
@@ -15,7 +17,8 @@ import (
 // 4. purexkb (Pure Go) - Approximates the layout from RMLVO names and compiles it.
 // 5. dynamicxkb (Pure Go) - Reconstructs the keymap dynamically in Go memory.
 // 6. xkbcomp (Pure Go) - Parses X server map using xkb-go.
-// 7. Core X11 (Pure Go) - Reverse-engineers modifiers using smart heuristics.
+// 7. purexkb without X (Pure Go) - only when there is no X connection at all.
+// 8. Core X11 (Pure Go) - Reverse-engineers modifiers using smart heuristics.
 func NewX11Translator(info OSInfo) Translator {
 	// 0. Check if a specific backend is strictly forced via environment variable
 	if envBackend := os.Getenv("KEYTRANS_BACKEND"); envBackend != "" {
@@ -121,7 +124,19 @@ func NewX11Translator(info OSInfo) Translator {
 		return t
 	}
 
-	// 7. Fallback to Core X11 Heuristics
+	// 7. No X connection at all: nothing above could start, but the keymap
+	// does not need one -- compile it from XKB_DEFAULT_* (or evdev/pc105/us)
+	// and take the state from the events.
+	if conn, ok := info.XgbConn.(*xgb.Conn); !ok || conn == nil {
+		if t, err := NewPureXKBTranslator(RMLVO{}); err == nil {
+			slog.Info("keytrans: no X connection, using purexkb from RMLVO defaults")
+			return t
+		} else {
+			slog.Warn("keytrans: purexkb without X failed", "err", err)
+		}
+	}
+
+	// 8. Fallback to Core X11 Heuristics
 	slog.Info("keytrans: using Core X11 heuristics fallback")
 	return newCoreX11Translator(info)
 }
