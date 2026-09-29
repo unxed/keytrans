@@ -76,15 +76,17 @@ func TestEnhancedKeyForKeysym(t *testing.T) {
 }
 
 func TestNewX11Translator_Fallback(t *testing.T) {
-	// If no valid connection is passed, the factory must safely return nil without panicking.
+	// With no connection the factory must not panic. Nothing X-based can start, so
+	// the only backend that may answer is purexkb built from the RMLVO defaults
+	// (or nil when even that cannot be compiled).
 	info := OSInfo{
 		DisplayString: ":99",
 		XgbConn:       nil,
 	}
 
 	translator := NewX11Translator(info)
-	if translator != nil {
-		t.Errorf("Expected nil translator for nil connection, got %T (%s)", translator, translator.Name())
+	if translator != nil && translator.Name() != "purexkb" {
+		t.Errorf("Expected nil or purexkb translator for nil connection, got %T (%s)", translator, translator.Name())
 	}
 }
 
@@ -122,15 +124,16 @@ func TestXKBStateParsing_Manual(t *testing.T) {
 }
 
 func TestNewX11Translator_InvalidConnType(t *testing.T) {
-	// Verify that factory doesn't panic if an invalid connection type is supplied
+	// Verify that factory doesn't panic if an invalid connection type is supplied;
+	// like a nil connection it is "no X connection": purexkb or nil, nothing else.
 	info := OSInfo{
 		DisplayString: ":99",
 		XgbConn:       "this is a string, not *xgb.Conn",
 	}
 
 	translator := NewX11Translator(info)
-	if translator != nil {
-		t.Errorf("Expected nil translator for invalid connection type, got %T", translator)
+	if translator != nil && translator.Name() != "purexkb" {
+		t.Errorf("Expected nil or purexkb translator for invalid connection type, got %T (%s)", translator, translator.Name())
 	}
 }
 
