@@ -124,3 +124,51 @@ This change is measurement only. Not yet implemented:
   and concurrent-process-safety for the extraction step.
 - A no-X11 RMLVO source (env vars / explicit config) so the embedded
   data is actually reachable without `_XKB_RULES_NAMES`.
+
+## Implementation (issue #1, second slice)
+
+The owner's answers on the issue: embed the **full tree** (about 400 KB is not
+a problem); choose the compression among the dependencies of `unxed/zipper`;
+choose the way to get the data.
+
+### Compression: xz via `github.com/unxed/xz`
+
+`unxed/zipper` (through `unxed/tar`, `unxed/zip`, `unxed/archives`) depends on
+`github.com/unxed/xz` (also `klauspost/compress`, `andybalholm/brotli`,
+`pierrec/lz4`, `dsnet/compress`, ...). Of these, xz/LZMA2 gives the smallest
+archive of this text-heavy data (343 KB for the full tree, against about
+365 KB for zstd -19 and 533 KB for gzip -9, see the table above), and
+`unxed/xz` is pure Go with no dependencies of its own (its `go.mod` has none),
+so it adds one module to `keytrans` and nothing below it. Decompression speed
+does not matter here: the archive is unpacked once per archive version.
+
+### Data: the distribution's built xkeyboard-config, in a committed archive
+
+The upstream release tarball cannot be embedded as it is: `rules/` is shipped
+there as unassembled `*.part` files that meson concatenates into `rules/evdev`,
+`rules/base` and the catalogs at build time. The distribution package (Debian/
+Ubuntu `xkb-data`) is the output of that build, with upstream's data files, so
+`scripts/build-xkb-archive.sh` packs it (`compat geometry keycodes rules
+symbols types`, plus the upstream `COPYING` of the same version) into
+`xkbdata/xkeyboard-config.tar.xz`, deterministically (sorted, zero mtime and
+owners, `xz -9e`), symlinks stored as copies. The archive is committed and is
+rebuilt by hand when xkeyboard-config is updated; the current one is built from
+`xkb-data 2.41-2ubuntu1.1`.
+
+### Unpacking and use
+
+`xkb_embedded.go` embeds the archive (`go:embed`) and unpacks it once, into
+`os.UserCacheDir()/keytrans/xkb-<hash of the archive>/` (atomically, through a
+temporary directory and a rename; a private temporary directory when there is
+no cache directory). `compileKeymapFromNames` first compiles with the system's
+own data and only if that fails retries with the unpacked copy put in front of
+xkb-go's include paths (`Context.PrependIncludePath`), so a system's local
+changes still win where there are any. `backend_purexkb.go` uses it.
+
+### RMLVO without X11
+
+`rmlvoWithDefaults` fills the names an X server does not publish (or when there
+is no X server): `XKB_DEFAULT_RULES/MODEL/LAYOUT/VARIANT/OPTIONS` first, then
+`evdev` / `pc105` / `us`. Names already set are kept. Nothing else in the
+backend changed: `purexkb` still needs an X connection for the keyboard state,
+so a fully X11-free backend is the next slice.

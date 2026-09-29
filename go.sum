@@ -6,3 +6,5 @@ github.com/unxed/winkeys v0.1.0 h1:5yTt0jgEgL2M/8U36xl3S3xh2NCKTDDWE4Q7qnHo8x8=
 github.com/unxed/winkeys v0.1.0/go.mod h1:eCDbEJFdYcii0Fd4O9u+CAqjJ4SkkhWDkhikNFwBCd4=
 github.com/unxed/xkb-go v0.1.9 h1:t2lhW6bcPxzX/1DBf9jIRoo13KhMm9+XUPJT4o5a/Kw=
 github.com/unxed/xkb-go v0.1.9/go.mod h1:p0uH0w1PGo5GU/qxcyj65edin5qHssAhvJTjCZ8nxNU=
+github.com/unxed/xz v0.1.47 h1:W5silw+vOEo7FkhpNG+j1EZySH9S1V223ZO65Pr3KFI=
+github.com/unxed/xz v0.1.47/go.mod h1:3QBWvJLIJ264yrPluSGFVZ2cLqcf53dKpGANZtGW0Zc=
