@@ -86,6 +86,31 @@ func newPureXKBTranslator(info OSInfo) Translator {
 	}
 }
 
+// RMLVO names a keyboard layout the way xkbcommon does: rules, model, layout,
+// variant and options. A zero field is filled in from the XKB_DEFAULT_*
+// environment variables and then from evdev / pc105 / us.
+type RMLVO struct {
+	Rules, Model, Layout, Variant, Options string
+}
+
+// NewPureXKBTranslator builds the pure-Go XKB translator without any X
+// connection (unxed/keytrans#1): the keymap is compiled from names (the
+// system's xkeyboard-config, or the embedded copy when there is none) and the
+// keyboard state is what the events carry -- the modifier and group bits of an
+// X11 event's state, or UpdateWaylandModifiers -- instead of what an X server
+// would be asked. Nothing here touches X11.
+func NewPureXKBTranslator(names RMLVO) (Translator, error) {
+	initKeycodeScheme(nil)
+	rules, model, layout, variant, options := rmlvoWithDefaults(names.Rules, names.Model, names.Layout, names.Variant, names.Options)
+	keymap, err := compileKeymapFromNames(&xkb.RuleNames{
+		Rules: rules, Model: model, Layout: layout, Variant: variant, Options: options,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &pureXKBTranslator{xkbState: keymap.NewState()}, nil
+}
+
 func (t *pureXKBTranslator) Name() string {
 	return "purexkb"
 }
