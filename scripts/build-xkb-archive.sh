@@ -16,7 +16,7 @@
 #
 # The whole tree is kept (compat, geometry, keycodes, rules, symbols, types):
 # about 340 KB compressed for xkeyboard-config 2.41, which is fine per the
-# decision on the issue. Symlinks (rules/base -> evdev) are stored as copies so
+# decision on the issue. Symlinks (rules/base -> evdev) and hard links are stored as copies so
 # extraction never has to create links.
 #
 # The archive is deterministic for a given input (sorted names, zero mtime and
@@ -41,7 +41,7 @@ if [ -z "$COPYING" ] || [ ! -f "$COPYING" ]; then
 fi
 
 mkdir -p "$(dirname "$OUT")"
-tar --create --dereference --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
+tar --create --dereference --hard-dereference --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
     --mode='u=rwX,go=rX' \
     -C "$XKB_DIR" compat geometry keycodes rules symbols types \
     -C "$(dirname "$COPYING")" "$(basename "$COPYING")" \

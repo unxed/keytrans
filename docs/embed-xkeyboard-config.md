@@ -136,7 +136,7 @@ choose the way to get the data.
 `unxed/zipper` (through `unxed/tar`, `unxed/zip`, `unxed/archives`) depends on
 `github.com/unxed/xz` (also `klauspost/compress`, `andybalholm/brotli`,
 `pierrec/lz4`, `dsnet/compress`, ...). Of these, xz/LZMA2 gives the smallest
-archive of this text-heavy data (343 KB for the full tree, against about
+archive of this text-heavy data (about 345 KB for the full tree, against about
 365 KB for zstd -19 and 533 KB for gzip -9, see the table above), and
 `unxed/xz` is pure Go with no dependencies of its own (its `go.mod` has none),
 so it adds one module to `keytrans` and nothing below it. Decompression speed
