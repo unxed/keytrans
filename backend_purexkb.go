@@ -1,7 +1,6 @@
 package keytrans
 
 import (
-	"context"
 	"log/slog"
 	"runtime"
 
@@ -56,13 +55,13 @@ func newPureXKBTranslator(info OSInfo) Translator {
 
 	// Fetch RMLVO configuration from X server dynamically
 	rules, model, layout, variant, options := getXKBRulesNames(conn)
-	if layout == "" {
-		layout = "us" // Safe fallback
-	}
+	// Names the server does not publish come from XKB_DEFAULT_* or, failing
+	// that, evdev / pc105 / us.
+	rules, model, layout, variant, options = rmlvoWithDefaults(rules, model, layout, variant, options)
 
-	// Compile the keymap natively in Go memory using our updated include paths!
-	xkbCtx := xkb.NewContext(context.Background(), xkb.ContextNoFlags)
-	keymap, err := xkbCtx.NewKeymapFromNames(&xkb.RuleNames{
+	// Compile the keymap natively in Go memory; the embedded xkeyboard-config
+	// stands in when the system has none installed.
+	keymap, err := compileKeymapFromNames(&xkb.RuleNames{
 		Rules:   rules,
 		Model:   model,
 		Layout:  layout,
